@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <!--<base href="https://cdn.jsdelivr.net/gh/Beluga-LB/minesweeper-minus@main/">-->
+    <!--<base href="https://raw.githubusercontent.com/Beluga-LB/minesweeper-minus/main/">-->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div id="loaderOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #111; color: #fff; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 999; font-family: monospace; padding: 20px; box-sizing: border-box;">
+      <h2 style="margin-bottom: 10px;">Loading Minesweeper Minus...</h2>
+      <div id="loadProgress" style="font-size: 20px; margin-bottom: 15px;">0 / 0 Assets Loaded</div>
+      
+      <div id="loadConsole" style="width: 80%; max-width: 600px; height: 150px; background: #000; border: 1px solid #444; padding: 10px; overflow-y: auto; font-size: 14px; text-align: left; margin-bottom: 15px; border-radius: 4px; color: #0f0;">
+          [System] Initializing asset preloader...<br>
+      </div>
+
+      <button id="skipBtn" onclick="forceStartGame()" style=" padding: 10px 20px; background: #e74c3c; color: white; border: none; font-family: monospace; font-size: 16px; cursor: pointer; border-radius: 4px;">Skip Loading (Errors Detected)</button>
+    </div>
+    <canvas id="game" width="1000" height="1000"></canvas>
+  </body>
+  <script src="helpers.js"></script>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    const consoleBox = document.getElementById('loadConsole');
+    const progressText = document.getElementById('loadProgress');
+    const skipBtn = document.getElementById('skipBtn');
+
+    const aud = {
+      flag: new Audio('aud/flag_sound.ogg'),
+      unflag: new Audio('aud/unflag_sound.mp3'),
+      sonarClick: new Audio('aud/sfx_click.ogg'),
+      sonar: new Audio('aud/sfx_radar.mp3'),
+      mine: new Audio('aud/explosion.ogg'),
+      
+      tenBounce: new Audio('aud/bounce.ogg'),
+      tenBeep: new Audio('aud/beep.ogg'),
+      tenReset: new Audio('aud/reset.ogg'),
+    }
+    const mus = {
+      zero: new Audio('mus/bgm_9.mp3'),
+      one: new Audio('mus/bgm_1.mp3'),
+      oneWin: new Audio('mus/win_1.mp3'),
+      two: new Audio('mus/bgm_2.mp3'),
+      twoWin: new Audio('mus/win_2.mp3'),
+      three: new Audio('mus/bgm_3.mp3'),
+      threeWin: new Audio('mus/win_3.mp3'),
+      four: new Audio('mus/bgm_4.mp3'),
+      fourWin: new Audio('mus/win_4.mp3'),
+      five: new Audio('mus/bgm_5.mp3'),
+      fiveWin: new Audio('mus/win_5.ogg'),
+      six: new Audio('mus/bgm_6.mp3'),
+      sixWin: new Audio('mus/win_6.ogg'),
+      seven: new Audio('mus/bgm_7.mp3'),
+      sevenWin: new Audio('mus/win_7.ogg'),
+      eight: new Audio('mus/bgm_8.mp3'),
+      eightWin: new Audio('mus/win_8.ogg'),
+      nineIntro: new Audio('mus/9_intro.mp3'),
+      nine: new Audio('mus/9_boss.mp3'),
+      nineWin: new Audio('mus/9_fanfare.ogg'),
+      tenIntro: new Audio('mus/10_intro.mp3'),
+      ten: new Audio('mus/10_boss.mp3'),
+      ten2: new Audio('mus/10_boss_2.mp3'),
+      tenWin: new Audio('mus/10_fanfare.ogg'),
+      elevenIntro: new Audio('mus/11_intro.mp3'),
+      eleven: new Audio('mus/11_boss.mp3'),
+      eleven2: new Audio('mus/11_boss_2.mp3'),
+      elevenWin: new Audio('mus/11_fanfare.ogg'),
+    }
+    mus.nineIntro.loopStart = 26.7;
+    mus.tenIntro.loopStart = 23.7;
+    mus.elevenIntro.loopStart = 43.2;
+    for (let i in aud) {
+      aud[i].oncanplaythrough = () => {
+        logToConsole(`Loaded audio: ${i}`);
+        updateProgress();
+        aud[i].oncanplaythrough = null; // Prevent multi-firing
+      };
+      aud[i].onerror = () => {
+        hasErrors = true;
+        logToConsole(`[ERROR] Failed to load audio: ${i}`, true);
+        skipBtn.style.display = 'block';
+        updateProgress();
+      };
+      setTimeout(() => {
+        if (aud[i].readyState < 2 && !aud[i].error) {
+          logToConsole(`[TIMEOUT] ${i} took too long to load`)
+        }
+      }, 3000);
+    }
+    for (let i in mus) {
+      if (!i.includes("Win")) mus[i].loop = true;
+      if ((i.includes("nine") || i.includes("ten") || i.includes("eleven")) && (!i.includes("Win") || !i.includes("Intro")))  mus[i].preservesPitch = false;
+    
+      const track = mus[i];
+      if (track.loopStart) {
+        track.loop = false; 
+        track.addEventListener('ended', () => {
+          track.currentTime = track.loopStart;
+          track.play().catch(e => console.log("Loop blocked:", e));
+        });
+      }
+
+      mus[i].oncanplaythrough = () => {
+        logToConsole(`Loaded music: ${i}`);
+        updateProgress();
+        mus[i].oncanplaythrough = null;
+      };
+      mus[i].onerror = () => {
+        hasErrors = true;
+        logToConsole(`[ERROR] Failed to load music: ${i}`, true);
+        skipBtn.style.display = 'block';
+        updateProgress();
+      };
+    }
+
+    const img = {
+      mineCounter1: new Image(),
+      mineCounter2: new Image(),
+      clock1: new Image(),
+      clock2: new Image(),
+      tenBody: new Image(),
+      tenPiston: new Image(),
+      flags: new Image(),
+      Numbers: new Image(),
+      NumbersNegative: new Image(),
+      nine: new Image(),
+      nineSpikes: new Image(),
+      Numbers10: new Image(),
+      tenBody: new Image(),
+      "1": new Image(),
+      "2": new Image(),
+      "3": new Image(),
+      "4": new Image(),
+      "5": new Image(),
+      "6": new Image(),
+      "7": new Image(),
+      "8": new Image(),
+      "9": new Image(),
+    }
+    for (let i in img) {
+      img[i].src = `img/${i}.png`;
+      img[i].onload = () => {
+        logToConsole(`Loaded image: img/${i}.png`);
+        updateProgress();
+      };
+      img[i].onerror = () => {
+        hasErrors = true;
+        logToConsole(`[ERROR] Failed to load image: img/${i}.png`, true);
+        skipBtn.style.display = 'block';
+        updateProgress();
+      };
+    }
+
+    let totalAssets = Object.keys(img).length + Object.keys(aud).length + Object.keys(mus).length;
+    let loadedAssets = 0;
+    let hasErrors = false;
+
+    function logToConsole(text, isError = false) {
+      console.log(text);
+      if (consoleBox) {
+        consoleBox.innerHTML += `<span style="color: ${isError ? '#ff5555' : '#0f0'}">${text}</span><br>`;
+        consoleBox.scrollTop = consoleBox.scrollHeight;
+      }
+    }
+
+    function updateProgress() {
+      loadedAssets++;
+      progressText.innerText = `${loadedAssets} / ${totalAssets} Assets Loaded`;
+      if (loadedAssets >= totalAssets) {
+        finishLoading();
+      }
+    }
+
+    function finishLoading() {
+      logToConsole("[System] Starting game...");
+      setTimeout(() => {
+        const overlay = document.getElementById('loaderOverlay');
+        if (overlay) overlay.style.display = 'none';
+      }, 500);
+    }
+
+    function forceStartGame() {
+      const overlay = document.getElementById('loaderOverlay');
+      if (overlay) overlay.style.display = 'none';
+      logToConsole("[System] Force-starting game despite missing assets.");
+      ctx.font = "72px serif";
+      ctx.fillStyle = "#FFF";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Click the canvas to start!", canvas.width / 2, canvas.height / 2);
+    }
+
+    const flagRow = [1,2,3,-1,-2,-3,9]
+    let state = {};
+    let loopId;
+    let started = false;
+
+    const maps = {
+      beginner: [
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [13, 19, 48],
+      ],
+      novice: [
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [13, 19, 48],
+      ],
+      advanced: [
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [13, 19, 48],
+      ],
+      expert: [
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [13, 19, 48],
+      ],
+    }
+    
+    window.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      state.mouse.x = (e.clientX - rect.left) * scaleX;
+      state.mouse.y = (e.clientY - rect.top) * scaleY;
+    });
+    
+    canvas.addEventListener('mousedown', (e) => {
+      if ((state.ten.active && checkCircleCollision(state.ten, state.mouse)) || state.over) return;
+      const c = Math.floor(state.mouse.x / state.cellSize);
+      const r = Math.floor((state.mouse.y - 100) / state.cellSize);
+      const cell = state.grid[r]?.[c];
+      
+      if (cell && !cell.opened && state.pressedCell !== cell) {
+        state.pressedCell = cell;
+        draw();
+      }
+    });
+    
+    window.addEventListener('mouseup', () => {
+      if (state.over) return;
+      if (state.pressedCell) {
+        state.pressedCell = null;
+        draw();
+      }
+    });
+
+    canvas.addEventListener('click', (e) => {
+      if (!started) {
+        init();
+        return;
+      }
+      if (state.over) return;
+      if (state.ten.revealed && checkCircleCollision(state.ten, state.mouse)) {
+        state.ten.click();
+        return;
+      };
+      const sonar = {
+        x: canvas.width / 2 - 100,
+        y: 0,
+        w: 50,
+        h: 100
+      }
+      if (checkCircleRectCollision(state.mouse, sonar)) state.useSonar();
+      const c = Math.floor(state.mouse.x / state.cellSize);
+      const r = Math.floor((state.mouse.y - 100) / state.cellSize);
+      const cell = state.grid[r]?.[c];
+      if (!cell) return;
+      if (cell.row === state.nine.row && cell.col === state.nine.col) {
+        state.nine.click();
+        return;
+      };
+
+      if (!state.clicked) {
+        if (state.nine.active && !state.nine.revealed) {
+          state.nine.reveal(cell);
+        } else if (state.ten.active && !state.ten.revealed && !state.nine.cell(cell)) {
+          state.ten.reveal(cell);
+          return;
+        } /*else if (state.eleven.active && !state.eleven.revealed) {
+
+        } */else placeMines(cell)
+      };
+      cell.open();
+      draw();
+    });
+
+    canvas.addEventListener('contextmenu', (e) => {
+      if (state.over) return;
+      e.preventDefault();
+      if (state.ten.revealed && checkCircleCollision(state.ten, state.mouse)) {
+        state.ten.click();
+        return;
+      };
+      const c = Math.floor(state.mouse.x / state.cellSize);
+      const r = Math.floor((state.mouse.y - 100) / state.cellSize);
+      const cell = state.grid[r]?.[c];
+      if (!cell) return;
+    
+      cell.flag();
+      draw();
+    });
+    
+    window.addEventListener('keydown', (e) => {
+      if (e.key === "z" || e.key === "Z") state.useSonar()
+      if ((e.key === " " || e.code === "Space") && state.over) init();
+    });
+
+    function openCell(cell, comeFromChord = false, comeFromSpread = false) {
+      if (cell.flagged || (comeFromChord && cell.opened)) return;
+      if (cell.opened) {
+        if (state.chording) chordCell(cell, comeFromSpread);
+        return;
+      };
+      
+      if (state.sonar) { 
+        play("sonar");
+        state.sonar = false;
+        state.coins -= state.sonarCost;
+        state.sonarCost += 50
+        if (cell.mine) {
+          cell.flag();
+          return;
+        }
+      }
+      
+      if (cell.mine) {
+        cell.flagged = cell.mine;
+        cell.hit = cell.mine;
+        state.fails++;
+        play("mine")
+        if (state.eleven.active) {
+          state.eleven.lastPenalty += 2;
+          state.eleven.penalty += state.eleven.lastPenalty;
+        };
+        if (state.fails >= 3 && !state.boss) gameOver();
+      };
+      cell.opened = true;
+      
+      if (cellValue(cell, false, true) === 0) {
+        const r = cell.row;
+        const c = cell.col;
+        for (let i = r - 1; i <= r + 1; i++) {
+          if (!state.grid[i]) continue;
+          for (let j = c - 1; j <= c + 1; j++) {
+            if (!state.grid[i][j]) continue;
+            const neighbor = state.grid[i][j];
+            openCell(neighbor, false, true);
+          }
+        }
+      }
+      if (checkWin() && !state.nine.active) gameOver(true);
+    }
+    
+    function chordCell(cell, comeFromSpread = false) {
+      // why are antis so hard to code :<
+      const visMines = cellValue(cell, false, false);
+      const absMines = cellValue(cell, false, true);
+      const visFlags = cellValue(cell, true, false);
+      const absFlags = cellValue(cell, true, true);
+      const m = comeFromSpread && visMines === 0 ? absMines : visMines;
+      const f = comeFromSpread && visMines === 0 ? absFlags : visFlags;
+
+      if (f !== m || cell.flagged) return;
+
+      const r = cell.row;
+      const c = cell.col;
+      for (let i = r - 1; i <= r + 1; i++) {
+        if (i < 0 || i >= state.rows) continue;
+        for (let j = c - 1; j <= c + 1; j++) {
+          if (j < 0 || j >= state.cols) continue;
+            openCell(state.grid[i][j], true);
+        }
+      }
+    }
+
+    function flagCell(cell) {
+      if (cell.opened) return;
+      cell.flagged += cell.flagged < 0 ? -1 : 1;
+      if (state.antiProb >= 1 && cell.flagged > 0) cell.flagged = -1;
+      if (state.doubleProb >= 1) {
+        cell.flagged *= 2;
+      }
+      if (cell.flagged > state.flags || cell.flagged < -state.flags) {
+        if (state.antiProb > 0 && cell.flagged > state.flags) cell.flagged = -1;
+        else cell.flagged = 0;
+        if (state.doubleProb >= 1) cell.flagged *= 2;
+      }
+      if (cell.flagged === 0) {
+        play("unflag");
+        if (state.eleven.active && cell.mine) cell.open();
+      }
+      else play("flag");
+    } 
+
+    function checkWin() {
+      for (let i = 0; i < state.rows; i++) {
+        for (let j = 0; j < state.cols; j++) {
+          const cell = state.grid[i][j];
+          if (cell.mine) continue;
+          if (!cell.opened) return false;
+        }
+      }
+      return true;
+    }
+
+    function gameOver(win = false) {
+      if (state.over) return;
+      if (win) state.won = true;
+      else state.lost = true;
+      if (state.ten.active) state.ten.time = win ? 10 : 0;
+      for (let i in mus) {
+        mus[i].pause();
+        mus[i].currentTime = 0; 
+      }  
+      if (state.won) mus[state.bgm + "Win"].play();
+
+      for (let i = 0; i < state.rows; i++) {
+        if (!state.grid[i]) continue;
+        for (let j = 0; j < state.cols; j++) {
+          if (!state.grid[i][j]) continue;
+          const cell = state.grid[i][j];
+          if (state.won && cell.mine && !cell.flagged) cell.flagged = cell.mine;
+          if (state.lost && cell.mine && !cell.flagged) cell.opened = true;
+        }
+      }
+    }
+
+    function cellValue(cell, flags = false, anti = false) {
+      if (!cell.opened && !cell.flagged) return "";
+      if (state.nine.active && cell === state.grid[state.nine.row][state.nine.col]) return 9;
+      if (cell.mine && cell.opened) {
+        let Xs = "";
+        for (let i = 0; i < Math.abs(cell.mine); i++) Xs += "X";
+        return Xs;
+      }
+      if (cell.flagged) {
+        let Fs = "";
+        for (let i = 0; i < Math.abs(cell.flagged); i++) Fs += "F";
+        return Fs;
+      }
+      
+      const r = cell.row;
+      const c = cell.col;
+      let count = 0;
+      for (let i = r - 1; i <= r + 1; i++) {
+        if (i < 0 || i >= state.rows) continue;
+        for (let j = c - 1; j <= c + 1; j++) {
+          const neighbor = state.grid[i][j];
+          if (j < 0 || j >= state.cols || neighbor === cell) continue;
+          if (anti) {
+            if (neighbor.mine && !flags) count += Math.abs(neighbor.mine);
+            else if (neighbor.flagged && flags) count += Math.abs(neighbor.flagged);
+          } else {
+            if (neighbor.mine && !flags) count += neighbor.mine;
+            else if (neighbor.flagged && flags) count += neighbor.flagged;
+          }
+        }
+      }
+      return count;
+    }
+
+    function placeMines(cell) {
+      if (state.clicked) return;
+      state.clicked = true;
+      if (!state.suprise && state.boss) {
+        for (let i in mus) {
+          mus[i].pause();
+          mus[i].currentTime = 0; 
+        }  
+      }
+      
+      let m = state.nine.active ? 8 : 0;
+      while (m < state.mines) {
+        const r = Math.floor(Math.random() * state.rows);
+        const c = Math.floor(Math.random() * state.cols);
+        const mine = state.grid[r][c];
+        let near = cell ? Math.abs(r - cell.row) <= 1 && Math.abs(c - cell.col) <= 1 : false;
+        if (cell) {
+          if ((state.rows <= 3 && state.cols <= 3) || state.firstClick === 1) near = r === cell.row && c === cell.col
+          if (state.rows * state.cols <= state.mines || state.firstClick === 0) near = false;
+        }
+        if (!mine.mine && !near) {
+          mine.mine = Math.random() < state.doubleProb ? 2 : 1;
+          if (Math.random() < state.antiProb) mine.mine = -mine.mine;
+          m++;
+        }
+        if (!state.suprise && state.boss) mus[state.bgm].play();
+      }
+    }
+
+    function play(sound) {
+      const soundClone = aud[sound].cloneNode();
+      soundClone.volume = 1;
+      soundClone.play();
+      if (sound === "tenBeep") state.ten.beepcd = Math.max(Math.floor(state.ten.time) * 10, 4)
+    }
+    
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.translate(0,100)
+      for (let r = 0; r < state.rows; r++) {
+        for (let c = 0; c < state.cols; c++) {
+          const cell = state.grid[r][c];
+          const x = c * state.cellSize;
+          const y = r * state.cellSize;
+          let color = "#FFF";
+          let textColor = color;
+          let strokeColor = null;
+          let value = cellValue(cell);
+          
+          if (cell === state.pressedCell) color = "#888";
+          else if (cell.opened) color = "#AAA";
+          if (state.nine.cell(cell)) {color = crimson; textColor = amethyst; strokeColor = "#FFF"}
+          if (cell.flagged && (!cell.mine || !cell.opened)) {
+            if (cell.flagged > 0) textColor = crimson;
+            if (cell.flagged < 0) textColor = invert(crimson);
+          }
+          if (cell.mine > 0 && cell.opened) color = red;
+          if ((cell.mine < 0 && cell.opened)) { color = invert(red); textColor = "#000";}
+          
+          rect(x, y, state.cellSize, state.cellSize, color);
+          rect(x, y, state.cellSize, state.cellSize, null, "#333");
+          if ((img.Numbers && value >= 0) || (img.NumbersNegative && value <= 0)) {
+            const visValue = cellValue(cell, false, false);
+            const absValue = cellValue(cell, false, true);
+            let anti = "";
+
+            if ((visValue === 0 && absValue > 0) || visValue < 0) anti = "Negative";
+
+            const num = Math.abs(visValue);
+            const tileSize = 64;
+            const col = num % 4;
+            const row = Math.floor(num / 4);
+            const sx = col * tileSize;
+            const sy = row * tileSize;
+            const sheet = img["Numbers" + anti];
+
+            if (cell.opened) {
+              if (sheet) {
+                ctx.drawImage(
+                  sheet,
+                  sx, sy, tileSize, tileSize,
+                  x + 2, y + 2, state.cellSize - 4, state.cellSize - 4
+                );
+              }
+            }
+          } else if (cell.flagged !== 0 && img.flags && !cell.opened) {
+            const col = (Math.floor(state.clock / 30) % 2);
+            let row = 0;
+            if (cell.flagged === 1) row = 0;
+            else if (cell.flagged === 2) row = 1;
+            else if (cell.flagged === 3) row = 2;
+            else if (cell.flagged === -1) row = 3;
+            else if (cell.flagged === -2) row = 4;
+            else if (cell.flagged === -3) row = 5;
+            else if (state.nine.cell(cell) && state.over) row = 6;
+
+            let tileSize = 64;
+            let sx = col * tileSize;
+            let sy = row * tileSize;
+            ctx.drawImage(
+              img.flags,
+              sx, sy, tileSize, tileSize,
+              x + 4, y + 4, state.cellSize - 8, state.cellSize - 8
+            )
+          } else text(value, x + state.cellSize / 2, y + state.cellSize / 2, textColor, state.cellSize / 1.5, "monospace", "center", "middle", strokeColor, 5);
+        }
+      }
+      if (state.nine.revealed) {
+        const nineCell = state.grid[state.nine.row][state.grid.col];
+        ctx.save();
+          const size = state.cellSize * 3
+          ctx.translate(state.nine.x + state.cellSize / 2, state.nine.y + state.cellSize / 2); 
+          ctx.rotate(degToRad(state.clock)); 
+          if (img.nineSpikes) ctx.drawImage(img.nineSpikes, -size / 2, -size / 2, size, size); 
+        ctx.restore();
+        if (img.nine) ctx.drawImage(
+                        img.nine,
+                        0, 0, 384, 384,
+                        state.nine.x - state.cellSize, state.nine.y - state.cellSize, state.cellSize * 3, state.cellSize * 3
+                      )
+      }
+      if (state.won || state.lost) {
+        rect(0, canvas.height / 2 - 60, canvas.width, 72, charcoal);
+        text(state.won ? "CLEAR!" : "GAME OVER", canvas.width / 2, canvas.height / 2, "#FFF", 72, "serif", "center");
+      }
+      ctx.translate(0,-100);
+      rect(0,0,canvas.width, 100, silver, charcoal)
+      rect(canvas.width / 2 - 50, 0, 100, 100, gold, charcoal);
+      rect(canvas.width / 2 - 100, 0, 50, 100, state.sonar ? emerald : charcoal, charcoal);
+      rect(canvas.width / 2 + 50, 0, 50, 100, state.livesColor(3 - state.fails, 3), charcoal);
+      
+      rect(0, 0, 240 ,100 , charcoal, silver)
+      if (img.mineCounter1 && img.mineCounter2) ctx.drawImage(img[`mineCounter${((Math.floor(state.clock / 30) + 1) % 2) + 1}`], 0, 0, 100, 100)
+      const m = state.minesLeft === "???" ? state.minesLeft : Math.min(999, Math.max(-99, state.minesLeft));
+      const dm = m < 0 ? `-${String(Math.abs(m)).padStart(2, '0')}` : String(m).padStart(3, '0');
+      text(dm, 110, 55, "#FFF", 72, "monospace", "left", "middle", null, null, "bold")     
+      
+      rect(240, 0, 240 ,100 , charcoal, silver)
+      text(`\$${Math.min(9999, state.coins)}`, 250, 55, "#FFF", 72, "monospace", "left", "middle")
+      
+      rect(canvas.width - 230, 0, 230 ,100 , charcoal, silver)
+      if (img.clock1 && img.clock2) ctx.drawImage(img[`clock${((Math.floor(state.clock / 30) + 1) % 2) + 1}`], canvas.width - 230, 0, 100, 100)
+      text(String(Math.min(999, Math.max(0, state.nine.revealed ? state.nine.timer : Math.floor(state.clock / 60)))).padStart(3, '0'), canvas.width - 10, 55, "#FFF", 72, "monospace", "right", "middle")
+      
+      if (state.ten.revealed) {
+        if (img.tenPiston) {
+          ctx.save();
+            ctx.translate(state.ten.x, state.ten.y)
+            for (let i=0; i<5; i++) {
+              const pattern = [0, 1, 2, 1];
+              const alt  = [2, 1, 0, 1]
+              let patternIndex = (Math.floor(state.ten.time * 4) + i) % pattern.length;
+              let scaleState = (i % 2 === 0) ? pattern[patternIndex] : alt[patternIndex];
+              const w = state.ten.r * 4;
+              let h = w;
+              if (scaleState === 0) h -= 40;
+              if (scaleState === 2) h += 40
+              ctx.drawImage(img.tenPiston, -state.ten.r * 2, -state.ten.r * 2 + ((w - h) / 2), w, h)
+              ctx.rotate((36 * Math.PI) / 180);
+            }
+          ctx.restore();
+        }
+        if (img.tenBody) ctx.drawImage(img.tenBody, state.ten.x - state.ten.r * 2, state.ten.y - state.ten.r * 2, state.ten.r * 4, state.ten.r * 4)
+        else {
+          circle(state.ten.x, state.ten.y, state.ten.r, charcoal);
+          rect(state.ten.x - 50, state.ten.y - 50, 100, 100, emerald)
+        }
+        if (img.Numbers10) {
+          let num = Math.min(10, Math.max(0, Math.ceil(state.ten.time)));
+          let tileSize = 64;
+          let col = num % 4;
+          let row = Math.floor(num / 4);
+          let sx = col * tileSize;
+          let sy = row * tileSize;
+          let drawSize = 96;
+          ctx.drawImage(
+            img.Numbers10,
+            sx, sy, tileSize, tileSize, 
+            state.ten.x - drawSize / 2, state.ten.y - drawSize / 2, drawSize, drawSize
+          );
+        } else text(Math.ceil(state.ten.time), state.ten.x, state.ten.y, "#FFF", 96, "monospace", "center", "middle")
+      };
+    }
+
+    function loop() {
+      if ((state.clicked || state.suprise) && !state.over) state.clock++;
+      if (state.bossRevealed) {
+        state.rColorCD--;
+        state.rMineCD--;
+        if (state.rColorCD <= 0) {state.rColor = Math.random(); state.rColorCD = 5};
+        if (state.rMineCD <= 0) {state.rMine = Math.floor(Math.random() * 1098 - 99); state.rMineCD = 6};
+      }
+      if (state.nine.active && state.nine.revealed) {
+        const nineCell = state.grid[state.nine.row][state.nine.col];
+        if (state.clicked || state.suprise) state.nine.timerCD--;
+        if (state.nine.timerCD <= 0 && (state.clicked || state.suprise) && !state.won) {state.nine.timer--; state.nine.timerCD = 60 - (state.fails * (60 / 9));}
+        for (let i in mus) {
+          if (!i.includes("Win") && !i.includes("Intro")) mus[i].playbackRate = 1.0 + (state.fails * (60 / 9) / 60);
+        } 
+        if (state.nine.timer <= 0) gameOver();
+        if (!nineCell.opened) openCell(nineCell)
+      }
+      if (state.ten.active) {
+        if (state.clicked && !state.ten.activated) state.ten.activated = true
+        if (state.ten.activated && !state.over && !state.ten.debug) state.ten.time -= (1 + state.fails * 0.1)/60;
+        if (state.ten.time < 4 && state.ten.time > 0 && state.ten.beepcd <= 0) play("tenBeep");
+        state.ten.beepcd--;
+        if (state.ten.time <= 0 && !state.lost) gameOver();
+        moveAtAngle(state.ten, state.ten.angle, state.ten.speed);
+
+        if (state.ten.x - state.ten.r <= 0) {
+          state.ten.x = state.ten.r;
+          state.ten.angle = Math.PI - state.ten.angle; 
+          play("tenBounce")
+        } else if (state.ten.x + state.ten.r >= canvas.width) {
+          state.ten.x = canvas.width - state.ten.r;
+          state.ten.angle = Math.PI - state.ten.angle;
+          play("tenBounce")
+        }; if (state.ten.y - state.ten.r <= 0) {
+          state.ten.y = state.ten.r;
+          state.ten.angle = -state.ten.angle; 
+          play("tenBounce")
+        } else if (state.ten.y + state.ten.r >= canvas.height) {
+          state.ten.y = canvas.height - state.ten.r;
+          state.ten.angle = -state.ten.angle;
+          play("tenBounce")
+        }
+      }
+      if (state.eleven.active) {
+        if (state.clicked || state.suprise) state.eleven.moveCD--;
+        if (state.eleven.moveCD <= 0 && !state.over) {
+          state.eleven.move();
+          state.eleven.moveCD = state.eleven.penalty ? 20 : 360;
+          if (state.eleven.penalty > 0) state.eleven.penalty--;
+        }
+        if (state.minesLeft <= 0) gameOver();
+      }
+      
+      draw();
+      loopId = requestAnimationFrame(loop);
+    }
+
+    function init() {
+      started = true;
+      if (loopId) cancelAnimationFrame(loopId);
+      for (let i in mus) {
+        mus[i].pause();
+        mus[i].currentTime = 0; 
+      }  
+      state = {
+        mouse: {
+          x: 0,
+          y: 0,
+          r: 1, // collision purposes
+        },
+        grid: [],
+        cols: 19, // 19
+        rows: 13, // 13
+        get cellSize() {
+          return Math.max(40, Math.floor(1200 / this.cols))
+        },
+        mines: 48,
+        antiProb: 0,
+        doubleProb: 0,
+        get flags() {
+          return this.doubleProb > 0 ? 2 : 1;
+        },
+        get minesLeft() {
+          if (state.nine.revealed) return this.rMine;
+          else if (state.nine.active && !state.nine.revealed) return "???";
+          let m = this.mines;
+          for (let i = 0; i < state.rows; i++) {
+            if (!state.grid[i]) continue;
+            for (let j = 0; j < state.cols; j++) {
+              if (!state.grid[i][j]) continue;
+              const cell = state.grid[i][j];
+              if (cell.flagged) m--;
+            }
+          }
+          if (state.eleven.active) m += state.eleven.handicap;
+          return m
+        },
+        rMine: null,
+        rMineCD: 0,
+        
+        chording: true,
+        firstClick: 3, // 3, 1, or 0
+        livesColor: function(val, max = 3, min = 1) {
+          if (val < 1) return charcoal;
+          const ratio = this.bossRevealed ? this.rColor : (Math.max(min, Math.min(val, max)) - min) / (max - min);
+          const h = ratio * 120;
+          const s = 1;
+          const l = 0.5;
+          const c = (1 - Math.abs(2 * l - 1)) * s;
+          const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+          const m = l - c / 2;
+          let r = 0, g = 0, b = 0;
+          if (0 <= h && h < 60) {
+            r = c; g = x; b = 0;
+          } else if (60 <= h && h < 120) {
+            r = x; g = c; b = 0;
+          } else if (120 <= h && h < 180) {
+            r = 0; g = c; b = x;
+          }
+          const semifinal = {
+            r: Math.round((r + m) * 255),
+            g: Math.round((g + m) * 255),
+            b: Math.round((b + m) * 255),
+          }
+          let final = {};
+          for (let i in semifinal) {
+            const hex = semifinal[i].toString(16);
+            final[i] = hex.length === 1 ? "0" + hex : hex;
+          }     
+          
+          return `#${final.r}${final.g}${final.b}`;         
+        },
+        rColor: null,
+        rColorCD: 0,
+
+        coins: 1050,
+        bgm: "three",
+        clicked: false,
+        fails: 0,
+        won: false,
+        lost: false,
+        get over() {
+          return this.won || this.lost
+        },
+        pressedCell: null,
+        clock: 0,
+        sonar: false,
+        sonarCost: 50,
+        useSonar: function() {
+          if (this.nine.active || this.coins < this.sonarCost) return;
+          this.sonar = toggle(this.sonar);
+          play('sonarClick')
+        },
+
+        get boss() {
+          return this.nine.active || this.ten.active || this.eleven.active
+        },
+        get bossRevealed() {
+          return this.nine.revealed || this.ten.revealed || this.eleven.revealed
+        },
+        suprise: false,
+        nine: { 
+          active: true,
+          revealed: false,
+          timer: 99,
+          timerCD: 60,
+          row: null,
+          col: null,
+          get x() {
+            return this.col * state.cellSize;
+          },
+          get y() {
+            return this.row * state.cellSize;
+          },
+          cell: function(cell) {
+            return this.row === cell.row && this.col === cell.col && state.nine.active; 
+          },
+          click: function() {
+            if (!state.clicked) placeMines();
+            if (checkWin()) gameOver(true);
+            else gameOver(false);
+          },
+          reveal: function(cell) {
+            this.row = cell ? cell.row : Math.floor(state.rows / 2);
+            this.col = cell ? cell.col : Math.floor(state.cols / 2);
+            this.revealed = true;
+            for (let i = this.row - 1; i <= this.row + 1; i++) {
+              if (!state.grid[i]) continue;
+              for (let j = this.col - 1; j <= this.col + 1; j++) {
+                if (!state.grid[i][j] || i === this.row && j === this.col) continue;
+                state.grid[i][j].mine = 1; 
+              }
+            }
+            for (let i in mus) {
+              mus[i].pause();
+              mus[i].currentTime = 0; 
+            }  
+            if (!state.suprise) mus.nineIntro.play();
+          }
+        },
+        ten: {
+          active: true,
+          revealed: false,
+          activated: false,
+          debug: false,
+          time: 10,
+          x: canvas.width / 2,
+          y: canvas.height / 2,
+          r: 75,
+          speed: 0,
+          angle: 0,
+          beepcd: 0,
+          pistoncd: 0,
+          click: function() {
+            play("tenReset")
+            if (!this.activated) this.activated = true;
+            this.time = 10;
+            if (this.speed === 0) this.speed += 0.2;
+            else this.speed *= 1.25;
+            this.angle = Math.random() * Math.PI * 2;
+          },
+          reveal: function(cell) {
+            if (cell) {
+              this.x = cell.col * state.cellSize + state.cellSize / 2;
+              this.y = cell.row * state.cellSize + state.cellSize / 2 + 100;
+            }
+            this.revealed = true;
+            for (let i in mus) {
+              mus[i].pause();
+              mus[i].currentTime = 0; 
+            }  
+            if (!state.suprise) mus.tenIntro.play();
+          }
+        },
+        eleven: {
+          active: false,
+          revealed: false,
+          handicap: -11,
+          row: null,
+          col: null,
+          penalty: 0,
+          lastPenalty: 1, 
+          move: function() {
+            let found = false;
+            while (!found) {
+              let opened = 0;
+              for (let i = 0; i < state.rows; i++) {
+                if (!state.grid[i]) continue;
+                for (let j = 0; j < state.cols; j++) {
+                  if (!state.grid[i][j]) continue;
+                  if (!state.grid[i][j].opened) opened++;
+                }
+              }
+              if (opened === 0) {gameOver(); return;}
+
+              const r = Math.floor(Math.random() * state.rows);
+              const c = Math.floor(Math.random() * state.cols);
+              const target = state.grid[r][c];
+              if (!target.opened && !target.flagged) found = target;
+            }
+            found.flag();
+          },
+          moveCD: 60,
+        },
+      }
+      
+      canvas.width = state.cols * state.cellSize;
+      canvas.height = state.rows * state.cellSize + 100;
+      
+      for (let r = 0; r < state.rows; r++) {
+        state.grid[r] = [];
+        for (let c = 0; c < state.cols; c++) {
+          state.grid[r][c] = {
+            row: r,
+            col: c,
+            opened: false,
+            flagged: 0,
+            mine: false,
+            anti: false,
+            hit: false,
+            open: function() {
+              openCell(this);
+            },
+            flag: function() {
+              flagCell(this);
+            }
+          };
+        }
+      }
+      if (state.eleven.active) state.bgm = "eleven";
+      else if (state.ten.active) state.bgm = "ten";
+      else if (state.nine.active) state.bgm = "nine";
+      else state.bgm =  randomChoice(["one", "two", "three", "four", "five", "six", "seven", "eight"]);
+      if (state.suprise) {
+        if (state.nine.active) state.nine.reveal();
+        if (state.ten.active) state.ten.reveal();
+        if (state.eleven.active) state.eleven.reveal();
+      } else if (state.boss) {
+        mus.zero.play();
+      }
+      if (state.suprise && state.nine.active && state.ten.active && !state.eleven.active) mus.ten2.play();
+      else if (!state.suprise && !state.boss) mus[state.bgm].play();
+      loop();
+    }
+    ctx.font = "72px serif"
+    ctx.fillText("Click the canvas to start the game!", 10, canvas.height / 2);
+  </script>
+</html>
