@@ -253,12 +253,14 @@
       const scaleY = canvas.height / rect.height;
       state.mouse.x = (e.clientX - rect.left) * scaleX;
       state.mouse.y = (e.clientY - rect.top) * scaleY;
+      state.mouse.zoomX = (state.mouse.x - canvas.width / 2) / state.cam.zoom + canvas.width / 2 - state.cam.x;
+      state.mouse.zoomY = (state.mouse.y - canvas.height / 2) / state.cam.zoom + canvas.height / 2 - state.cam.y;
     });
     
     canvas.addEventListener('mousedown', (e) => {
       if ((state.ten.active && checkCircleCollision(state.ten, state.mouse)) || state.over) return;
-      const c = Math.floor(state.mouse.x / state.cellSize);
-      const r = Math.floor((state.mouse.y - 100) / state.cellSize);
+      const c = Math.floor(state.mouse.zoomX / state.cellSize);
+      const r = Math.floor((state.mouse.zoomY - 100) / state.cellSize);
       const cell = state.grid[r]?.[c];
       
       if (cell && !cell.opened && state.pressedCell !== cell) {
@@ -292,8 +294,8 @@
         h: 100
       }
       if (checkCircleRectCollision(state.mouse, sonar)) state.useSonar();
-      const c = Math.floor(state.mouse.x / state.cellSize);
-      const r = Math.floor((state.mouse.y - 100) / state.cellSize);
+      const c = Math.floor(state.mouse.zoomX / state.cellSize);
+      const r = Math.floor((state.mouse.zoomY - 100) / state.cellSize);
       const cell = state.grid[r]?.[c];
       if (!cell) return;
       if (cell.row === state.nine.row && cell.col === state.nine.col) {
@@ -322,8 +324,8 @@
         state.ten.click();
         return;
       };
-      const c = Math.floor(state.mouse.x / state.cellSize);
-      const r = Math.floor((state.mouse.y - 100) / state.cellSize);
+      const c = Math.floor(state.mouse.zoomX / state.cellSize);
+      const r = Math.floor((state.mouse.zoomY - 100) / state.cellSize);
       const cell = state.grid[r]?.[c];
       if (!cell) return;
     
@@ -331,15 +333,34 @@
       draw();
     });
     
+    window.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const zoomIntensity = 0.1;
+      if (e.deltaY < 0) {
+        state.cam.zoom = Math.min(state.cam.zoom + zoomIntensity, 3.0);
+      } else {
+        state.cam.zoom = Math.max(state.cam.zoom - zoomIntensity, 0.5);
+      }
+    }, { passive: false });
+    
+    const keys = {};
+
     window.addEventListener('keydown', (e) => {
-      if (e.key === "z" || e.key === "Z") state.useSonar()
+      const key = e.key.toLowerCase();
+      keys[key] = true;
+
+      if (key === "z") state.useSonar();
       if ((e.key === " " || e.code === "Space") && state.over) init();
+    });
+
+    window.addEventListener('keyup', (e) => {
+      keys[e.key.toLowerCase()] = false;
     });
 
     function openCell(cell, comeFromChord = false, comeFromSpread = false) {
       if (cell.flagged || (comeFromChord && cell.opened)) return;
       if (cell.opened) {
-        if (state.chording) chordCell(cell, comeFromSpread);
+        if (state.chording && !comeFromSpread) chordCell(cell, comeFromSpread);
         return;
       };
       
@@ -359,6 +380,7 @@
         cell.hit = cell.mine;
         state.fails++;
         play("mine")
+        state.shake += 30;
         if (state.eleven.active) {
           state.eleven.lastPenalty += 2;
           state.eleven.penalty += state.eleven.lastPenalty;
@@ -528,6 +550,18 @@
     
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
+      if (state.shake > 0) {
+        const force = 3;
+        const offsetX = state.shakeDir ? force : -force;
+        state.shakeDir = toggle(state.shakeDir);
+        ctx.translate(offsetX, 0);
+        state.shake--;
+      }
+      ctx.save();
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.scale(state.cam.zoom, state.cam.zoom);
+      ctx.translate(-canvas.width / 2 + state.cam.x, -canvas.height / 2 + state.cam.y)
 
       ctx.translate(0,100)
       for (let r = 0; r < state.rows; r++) {
@@ -612,11 +646,8 @@
                         state.nine.x - state.cellSize, state.nine.y - state.cellSize, state.cellSize * 3, state.cellSize * 3
                       )
       }
-      if (state.won || state.lost) {
-        rect(0, canvas.height / 2 - 60, canvas.width, 72, charcoal);
-        text(state.won ? "CLEAR!" : "GAME OVER", canvas.width / 2, canvas.height / 2, "#FFF", 72, "serif", "center");
-      }
       ctx.translate(0,-100);
+      ctx.restore();
       rect(0,0,canvas.width, 100, silver, charcoal)
       rect(canvas.width / 2 - 50, 0, 100, 100, gold, charcoal);
       rect(canvas.width / 2 - 100, 0, 50, 100, state.sonar ? emerald : charcoal, charcoal);
@@ -626,57 +657,87 @@
       if (img.mineCounter1 && img.mineCounter2) ctx.drawImage(img[`mineCounter${((Math.floor(state.clock / 30) + 1) % 2) + 1}`], 0, 0, 100, 100)
       const m = state.minesLeft === "???" ? state.minesLeft : Math.min(999, Math.max(-99, state.minesLeft));
       const dm = m < 0 ? `-${String(Math.abs(m)).padStart(2, '0')}` : String(m).padStart(3, '0');
-      text(dm, 110, 55, "#FFF", 72, "monospace", "left", "middle", null, null, "bold")     
+      text(dm, 110, 55, red, 72, "serif", "left", "middle", "#FFF", 4)     
       
       rect(240, 0, 240 ,100 , charcoal, silver)
       text(`\$${Math.min(9999, state.coins)}`, 250, 55, "#FFF", 72, "monospace", "left", "middle")
       
       rect(canvas.width - 230, 0, 230 ,100 , charcoal, silver)
       if (img.clock1 && img.clock2) ctx.drawImage(img[`clock${((Math.floor(state.clock / 30) + 1) % 2) + 1}`], canvas.width - 230, 0, 100, 100)
-      text(String(Math.min(999, Math.max(0, state.nine.revealed ? state.nine.timer : Math.floor(state.clock / 60)))).padStart(3, '0'), canvas.width - 10, 55, "#FFF", 72, "monospace", "right", "middle")
+      const t = String(Math.min(999, Math.max(0, state.nine.revealed ? state.nine.timer : Math.floor(state.clock / 60)))).padStart(3, '0')
+      text(t, canvas.width - 10, 55, red, 72, "serif", "right", "middle", "#FFF", 4)
       
       if (state.ten.revealed) {
         if (img.tenPiston) {
           ctx.save();
-            ctx.translate(state.ten.x, state.ten.y)
-            for (let i=0; i<5; i++) {
-              const pattern = [0, 1, 2, 1];
-              const alt  = [2, 1, 0, 1]
-              let patternIndex = (Math.floor(state.ten.time * 4) + i) % pattern.length;
-              let scaleState = (i % 2 === 0) ? pattern[patternIndex] : alt[patternIndex];
+            ctx.filter = 'brightness(200%)';
+            ctx.translate(state.ten.x, state.ten.y);
+            for (let i = 0; i < 5; i++) {
+              const basePattern = [1, 2, 1, 0];
+              const altPattern  = [1, 0, 1, 2];
+              let speed = 4;
+              if (Math.ceil(state.ten.time) <= 4) speed *= Math.ceil(state.ten.time) + (4 - Math.ceil(state.ten.time)) * 3
+              
+              let patternIndex = Math.floor(state.ten.time * speed) % basePattern.length;
+              
+              let scaleState;
+              scaleState = i % 2 === 0 ? basePattern[patternIndex] : altPattern[patternIndex];
+              
               const w = state.ten.r * 4;
               let h = w;
-              if (scaleState === 0) h -= 40;
-              if (scaleState === 2) h += 40
-              ctx.drawImage(img.tenPiston, -state.ten.r * 2, -state.ten.r * 2 + ((w - h) / 2), w, h)
+              if (scaleState === 0) h -= 30;
+              if (scaleState === 2) h += 30;
+              
+              ctx.drawImage(img.tenPiston, -state.ten.r * 2, -state.ten.r * 2 + ((w - h) / 2), w, h);
               ctx.rotate((36 * Math.PI) / 180);
             }
           ctx.restore();
         }
-        if (img.tenBody) ctx.drawImage(img.tenBody, state.ten.x - state.ten.r * 2, state.ten.y - state.ten.r * 2, state.ten.r * 4, state.ten.r * 4)
+        if (img.tenBody) {
+          ctx.save();
+            let factor = 1 - Math.min(10, Math.max(0, Math.ceil(state.ten.time))) / 10;
+            let brightnessVal = 200 - (150 * factor);
+            ctx.filter = `brightness(${brightnessVal}%)`;
+            ctx.drawImage(img.tenBody, state.ten.x - state.ten.r * 2, state.ten.y - state.ten.r * 2, state.ten.r * 4, state.ten.r * 4);
+          ctx.restore();
+        }
         else {
           circle(state.ten.x, state.ten.y, state.ten.r, charcoal);
           rect(state.ten.x - 50, state.ten.y - 50, 100, 100, emerald)
         }
         if (img.Numbers10) {
-          let num = Math.min(10, Math.max(0, Math.ceil(state.ten.time)));
-          let tileSize = 64;
-          let col = num % 4;
-          let row = Math.floor(num / 4);
-          let sx = col * tileSize;
-          let sy = row * tileSize;
-          let drawSize = 96;
-          ctx.drawImage(
-            img.Numbers10,
-            sx, sy, tileSize, tileSize, 
-            state.ten.x - drawSize / 2, state.ten.y - drawSize / 2, drawSize, drawSize
-          );
+          ctx.save();
+            if (state.ten.time <= 0) ctx.filter = 'sepia(100%) saturate(500%) hue-rotate(310deg) brightness(67%)';
+            let num = Math.min(10, Math.max(0, Math.ceil(state.ten.time)));
+            let tileSize = 64;
+            let col = num % 4;
+            let row = Math.floor(num / 4);
+            let sx = col * tileSize;
+            let sy = row * tileSize;
+            let drawSize = 4 * state.ten.r / 3;
+            ctx.drawImage(
+              img.Numbers10,
+              sx, sy, tileSize, tileSize, 
+              state.ten.x - drawSize / 2, state.ten.y - drawSize / 2, drawSize, drawSize
+            );
+          ctx.restore();
         } else text(Math.ceil(state.ten.time), state.ten.x, state.ten.y, "#FFF", 96, "monospace", "center", "middle")
       };
+      if (state.won || state.lost) {
+        ctx.translate(0,100)
+        rect(0, canvas.height / 2 - 60, canvas.width, 72, charcoal);
+        text(state.won ? "CLEAR!" : "GAME OVER", canvas.width / 2, canvas.height / 2, "#FFF", 72, "serif", "center");
+        ctx.translate(0, -100)
+      }
+      ctx.restore();
     }
 
     function loop() {
       if ((state.clicked || state.suprise) && !state.over) state.clock++;
+      if (keys['w'] || keys['arrowup'])    state.cam.y += state.cam.speed;
+      if (keys['s'] || keys['arrowdown'])  state.cam.y -= state.cam.speed;
+      if (keys['a'] || keys['arrowleft'])  state.cam.x += state.cam.speed;
+      if (keys['d'] || keys['arrowright']) state.cam.x -= state.cam.speed;
       if (state.bossRevealed) {
         state.rColorCD--;
         state.rMineCD--;
@@ -691,7 +752,7 @@
           if (!i.includes("Win") && !i.includes("Intro")) mus[i].playbackRate = 1.0 + (state.fails * (60 / 9) / 60);
         } 
         if (state.nine.timer <= 0) gameOver();
-        if (!nineCell.opened) openCell(nineCell)
+        if (!nineCell.opened && !nineCell.mine) openCell(nineCell)
       }
       if (state.ten.active) {
         if (state.clicked && !state.ten.activated) state.ten.activated = true
@@ -705,18 +766,22 @@
           state.ten.x = state.ten.r;
           state.ten.angle = Math.PI - state.ten.angle; 
           play("tenBounce")
+          state.shake += 5;
         } else if (state.ten.x + state.ten.r >= canvas.width) {
           state.ten.x = canvas.width - state.ten.r;
           state.ten.angle = Math.PI - state.ten.angle;
           play("tenBounce")
+          state.shake += 5;
         }; if (state.ten.y - state.ten.r <= 0) {
           state.ten.y = state.ten.r;
           state.ten.angle = -state.ten.angle; 
           play("tenBounce")
+          state.shake += 5;
         } else if (state.ten.y + state.ten.r >= canvas.height) {
           state.ten.y = canvas.height - state.ten.r;
           state.ten.angle = -state.ten.angle;
           play("tenBounce")
+          state.shake += 5;
         }
       }
       if (state.eleven.active) {
@@ -746,9 +811,15 @@
           y: 0,
           r: 1, // collision purposes
         },
+        cam: {
+          x: 0,
+          y: 0,
+          zoom: 1.0,
+          speed: 10,
+        },
         grid: [],
-        cols: 19, // 19
-        rows: 13, // 13
+        cols: 19,
+        rows: 13,
         get cellSize() {
           return Math.max(40, Math.floor(1200 / this.cols))
         },
@@ -779,7 +850,7 @@
         chording: true,
         firstClick: 3, // 3, 1, or 0
         livesColor: function(val, max = 3, min = 1) {
-          if (val < 1) return charcoal;
+          if (val < 1 && !state.boss) return charcoal;
           const ratio = this.bossRevealed ? this.rColor : (Math.max(min, Math.min(val, max)) - min) / (max - min);
           const h = ratio * 120;
           const s = 1;
@@ -829,6 +900,8 @@
           this.sonar = toggle(this.sonar);
           play('sonarClick')
         },
+        shake: 0,
+        shakeDir: false,
 
         get boss() {
           return this.nine.active || this.ten.active || this.eleven.active
@@ -840,7 +913,7 @@
         nine: { 
           active: true,
           revealed: false,
-          timer: 99,
+          timer: 999,
           timerCD: 60,
           row: null,
           col: null,
@@ -858,10 +931,27 @@
             if (checkWin()) gameOver(true);
             else gameOver(false);
           },
+          move: function() {
+            state.grid[this.row][this.col].opened = false;
+            state.grid[this.row][this.col].flagged = false;
+            for (let i=-1; i<=1; i++) {
+              state.grid[this.row + i][this.col - 1].mine = state.grid[this.row + i][this.col + 2].mine;
+              state.grid[this.row + i][this.col - 1].opened = state.grid[this.row + i][this.col + 2].opened;
+            }
+            this.col++;
+            for (let i = this.row - 1; i <= this.row + 1; i++) {
+              if (!state.grid[i]) continue;
+              for (let j = this.col - 1; j <= this.col + 1; j++) {
+                if (!state.grid[i][j] || i === this.row && j === this.col) continue;
+                state.grid[i][j].mine = 1; 
+                state.grid[i][j].opened = false;
+              }
+            }
+          },
           reveal: function(cell) {
             this.row = cell ? cell.row : Math.floor(state.rows / 2);
             this.col = cell ? cell.col : Math.floor(state.cols / 2);
-            this.revealed = true;
+            this.revealed = true; 
             for (let i = this.row - 1; i <= this.row + 1; i++) {
               if (!state.grid[i]) continue;
               for (let j = this.col - 1; j <= this.col + 1; j++) {
@@ -877,24 +967,25 @@
           }
         },
         ten: {
-          active: true,
+          active: false,
           revealed: false,
           activated: false,
           debug: false,
           time: 10,
           x: canvas.width / 2,
           y: canvas.height / 2,
-          r: 75,
+          r: 50,
           speed: 0,
           angle: 0,
           beepcd: 0,
           pistoncd: 0,
+          shake: 0,
+          shakeOffset: 0,
           click: function() {
             play("tenReset")
             if (!this.activated) this.activated = true;
             this.time = 10;
-            if (this.speed === 0) this.speed += 0.2;
-            else this.speed *= 1.25;
+            this.speed += 0.2;
             this.angle = Math.random() * Math.PI * 2;
           },
           reveal: function(cell) {
@@ -942,8 +1033,8 @@
         },
       }
       
-      canvas.width = state.cols * state.cellSize;
-      canvas.height = state.rows * state.cellSize + 100;
+      canvas.width = 1366;
+      canvas.height = 768;
       
       for (let r = 0; r < state.rows; r++) {
         state.grid[r] = [];
