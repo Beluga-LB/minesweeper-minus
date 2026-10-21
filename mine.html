@@ -2,7 +2,7 @@
 <html>
   <head>
     <!--<base href="https://cdn.jsdelivr.net/gh/Beluga-LB/minesweeper-minus@main/">-->
-    <!--<base href="https://raw.githubusercontent.com/Beluga-LB/minesweeper-minus/main/">-->
+  <!--<base href="https://raw.githubusercontent.com/Beluga-LB/minesweeper-minus/main/">-->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="styles.css">
@@ -37,6 +37,11 @@
       sonar: new Audio('aud/sfx_radar.mp3'),
       mine: new Audio('aud/explosion.ogg'),
       
+      nineMove: new Audio('aud/sfx_move.ogg'),
+      nineStop: new Audio('aud/sfx_stop.ogg'),
+      // tenBounce: new Audio('aud/bounce.ogg'),
+      
+
       tenBounce: new Audio('aud/bounce.ogg'),
       tenBeep: new Audio('aud/beep.ogg'),
       tenReset: new Audio('aud/reset.ogg'),
@@ -131,16 +136,10 @@
       nine: new Image(),
       nineSpikes: new Image(),
       Numbers10: new Image(),
-      tenBody: new Image(),
-      "1": new Image(),
-      "2": new Image(),
-      "3": new Image(),
-      "4": new Image(),
-      "5": new Image(),
-      "6": new Image(),
-      "7": new Image(),
-      "8": new Image(),
-      "9": new Image(),
+      water: new Image(),
+      white_outline: new Image(),
+      outline_blocks: new Image(),
+      outline_blocks_alt: new Image(),
     }
     for (let i in img) {
       img[i].src = `img/${i}.png`;
@@ -188,11 +187,6 @@
       const overlay = document.getElementById('loaderOverlay');
       if (overlay) overlay.style.display = 'none';
       logToConsole("[System] Force-starting game despite missing assets.");
-      ctx.font = "72px serif";
-      ctx.fillStyle = "#FFF";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("Click the canvas to start!", canvas.width / 2, canvas.height / 2);
     }
 
     const flagRow = [1,2,3,-1,-2,-3,9]
@@ -246,8 +240,37 @@
         [13, 19, 48],
       ],
     }
+
+    const outlineColor = [
+      0,
+      1,
+      2,
+      3,
+      8, // Nine
+      4,
+      5,
+      6,
+      7,
+      9, // Ten
+      10, // Eleven
+    ]
+
+    const bgmTheme = {
+      one: 0,
+      two: 1,
+      three: 2,
+      four: 3,
+      five: 5,
+      six: 6,
+      seven: 7,
+      eight: 8,
+      nine: 4,
+      ten: 9,
+      eleven: 10,
+    }
     
     window.addEventListener('mousemove', (e) => {
+      if (!started) return;
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
@@ -255,15 +278,20 @@
       state.mouse.y = (e.clientY - rect.top) * scaleY;
       state.mouse.zoomX = (state.mouse.x - canvas.width / 2) / state.cam.zoom + canvas.width / 2 - state.cam.x;
       state.mouse.zoomY = (state.mouse.y - canvas.height / 2) / state.cam.zoom + canvas.height / 2 - state.cam.y;
+      
+      const c = Math.floor(state.mouse.zoomX / state.cellSize);
+      const r = Math.floor((state.mouse.zoomY - 100) / state.cellSize);
+      const cell = state.grid[r]?.[c];
+      if (state.pressedCell && state.pressedCell !== cell) state.pressedCell = cell;
     });
     
     canvas.addEventListener('mousedown', (e) => {
-      if ((state.ten.active && checkCircleCollision(state.ten, state.mouse)) || state.over) return;
+      if (!started || (state.ten.active && checkCircleCollision(state.ten, state.mouse)) || state.over) return;
       const c = Math.floor(state.mouse.zoomX / state.cellSize);
       const r = Math.floor((state.mouse.zoomY - 100) / state.cellSize);
       const cell = state.grid[r]?.[c];
       
-      if (cell && !cell.opened && state.pressedCell !== cell) {
+      if (cell && state.pressedCell !== cell) {
         state.pressedCell = cell;
         draw();
       }
@@ -564,28 +592,80 @@
       ctx.translate(-canvas.width / 2 + state.cam.x, -canvas.height / 2 + state.cam.y)
 
       ctx.translate(0,100)
+      const bgMinR = -30;
+      const bgMaxR = state.rows + 30;
+      const bgMinC = -30;
+      const bgMaxC = state.cols + 30;
+      
+      let tileSize = 64;
+      let offsetX = (Math.floor(state.clock / 30) + 1) % 2 + 2;
+      let offsetY = bgmTheme[state.bgm];
+      
+      for (let r = bgMinR; r < bgMaxR; r++) {
+        for (let c = bgMinC; c < bgMaxC; c++) {
+          const x = c * state.cellSize;
+          const y = r * state.cellSize;
+          ctx.drawImage(img.water, offsetX * tileSize, offsetY * tileSize, 64, 64, x, y, state.cellSize, state.cellSize);
+        }
+      }
       for (let r = 0; r < state.rows; r++) {
         for (let c = 0; c < state.cols; c++) {
           const cell = state.grid[r][c];
+          let value = cellValue(cell);
           const x = c * state.cellSize;
           const y = r * state.cellSize;
-          let color = "#FFF";
-          let textColor = color;
-          let strokeColor = null;
-          let value = cellValue(cell);
+          offsetX = (Math.floor(state.clock / 30) + 1) % 2;
+          offsetY = bgmTheme[state.bgm];
+          let outline = false;
           
-          if (cell === state.pressedCell) color = "#888";
-          else if (cell.opened) color = "#AAA";
-          if (state.nine.cell(cell)) {color = crimson; textColor = amethyst; strokeColor = "#FFF"}
-          if (cell.flagged && (!cell.mine || !cell.opened)) {
-            if (cell.flagged > 0) textColor = crimson;
-            if (cell.flagged < 0) textColor = invert(crimson);
+          if (cell === state.pressedCell) outline = true;
+          else if (state.pressedCell && state.pressedCell.opened) {
+            const rowOffset = Math.abs(cell.row - state.pressedCell.row);
+            const colOffset = Math.abs(cell.col - state.pressedCell.col);
+            if (rowOffset <= 1 && colOffset <= 1) outline = true;
           }
-          if (cell.mine > 0 && cell.opened) color = red;
-          if ((cell.mine < 0 && cell.opened)) { color = invert(red); textColor = "#000";}
+          if (cell.opened) offsetX += 2;
+          if (cell.mine && (cell.opened || state.debug)) {offsetY = 24; offsetX = 3;};
+
+          let sx = offsetX * tileSize;
+          let sy = offsetY * tileSize;
+          ctx.drawImage(
+            img.water,
+            sx, sy, tileSize, tileSize,
+            x, y, state.cellSize, state.cellSize
+          )
+          const outlineSize = 4;
+          const outlineTheme = outlineColor[offsetY] + 1;
+          if (!state.grid[r]?.[c - 1]) {
+            ctx.drawImage(
+              img.outline_blocks,
+              (2 * outlineTheme) * outlineSize, 0, outlineSize - 1, 16 * outlineSize,
+              x, y, state.cellSize / 16, state.cellSize
+            )
+          }
+          if (!state.grid[r]?.[c + 1]) {
+            ctx.drawImage(
+              img.outline_blocks,
+              (2 * outlineTheme) * outlineSize, 0, outlineSize - 1, 16 * outlineSize,
+              x + state.cellSize, y, state.cellSize / 16, state.cellSize
+            )
+          }
+          if (!state.grid[r + 1]?.[c]) {
+            ctx.drawImage(
+              img.outline_blocks_alt,
+              0, (2 * outlineTheme) * outlineSize, outlineSize * 16, outlineSize - 1,
+              x, y + state.cellSize, state.cellSize, state.cellSize / 16
+            )
+          }
+          if (!state.grid[r - 1]?.[c]) {
+            ctx.drawImage(
+              img.outline_blocks_alt,
+              0, (2 * outlineTheme) * outlineSize, outlineSize * 16, outlineSize - 1,
+              x, y, state.cellSize, state.cellSize / 16
+            )
+          }
+          if (outline) ctx.drawImage(img["white_outline"], x, y, state.cellSize, state.cellSize)
           
-          rect(x, y, state.cellSize, state.cellSize, color);
-          rect(x, y, state.cellSize, state.cellSize, null, "#333");
           if ((img.Numbers && value >= 0) || (img.NumbersNegative && value <= 0)) {
             const visValue = cellValue(cell, false, false);
             const absValue = cellValue(cell, false, true);
@@ -629,11 +709,14 @@
               sx, sy, tileSize, tileSize,
               x + 4, y + 4, state.cellSize - 8, state.cellSize - 8
             )
-          } else text(value, x + state.cellSize / 2, y + state.cellSize / 2, textColor, state.cellSize / 1.5, "monospace", "center", "middle", strokeColor, 5);
+          }
         }
       }
       if (state.nine.revealed) {
         const nineCell = state.grid[state.nine.row][state.grid.col];
+        const target = state.grid[state.nine.row][state.nine.col + 2];
+        const moving = state.grid[state.nine.row][state.nine.col - 1];
+
         ctx.save();
           const size = state.cellSize * 3
           ctx.translate(state.nine.x + state.cellSize / 2, state.nine.y + state.cellSize / 2); 
@@ -746,13 +829,31 @@
       }
       if (state.nine.active && state.nine.revealed) {
         const nineCell = state.grid[state.nine.row][state.nine.col];
-        if (state.clicked || state.suprise) state.nine.timerCD--;
+        if (state.clicked || state.suprise) state.nine.timerCD--
+        if (state.clicked) {
+          state.nine.thinkCD--;
+          state.nine.moveCD--;
+        }
+        if (state.nine.thinkCD <= 0) {
+          state.nine.thinkCD = Math.random() * 130 + 20;
+          let dir = randomChoice(["row", "col"]);
+          if (dir === "row") state.nine.destination = state.grid[Math.floor(1 + Math.random() * (state.rows - 2))][nineCell.col];
+          else if (dir === "col") state.nine.destination = state.grid[nineCell.row][Math.floor(1 + Math.random() * (state.cols - 2))];
+        } else if (state.nine.moveCD <= 0) {
+          state.nine.moveCD = 6;
+          if (state.nine.destination.row === nineCell.row) {
+            if (state.nine.destination.col > nineCell.col) state.nine.move("right");
+            else if (state.nine.destination.col < nineCell.col) state.nine.move("left");
+          } else if (state.nine.destination.col === nineCell.col) {
+            if (state.nine.destination.row > nineCell.row) state.nine.move("down");
+            else if (state.nine.destination.row < nineCell.row) state.nine.move("up");
+          }
+        }
         if (state.nine.timerCD <= 0 && (state.clicked || state.suprise) && !state.won) {state.nine.timer--; state.nine.timerCD = 60 - (state.fails * (60 / 9));}
         for (let i in mus) {
           if (!i.includes("Win") && !i.includes("Intro")) mus[i].playbackRate = 1.0 + (state.fails * (60 / 9) / 60);
         } 
         if (state.nine.timer <= 0) gameOver();
-        if (!nineCell.opened && !nineCell.mine) openCell(nineCell)
       }
       if (state.ten.active) {
         if (state.clicked && !state.ten.activated) state.ten.activated = true
@@ -818,12 +919,12 @@
           speed: 10,
         },
         grid: [],
-        cols: 19,
-        rows: 13,
+        cols: 30,
+        rows: 16,
         get cellSize() {
           return Math.max(40, Math.floor(1200 / this.cols))
         },
-        mines: 48,
+        mines: 99,
         antiProb: 0,
         doubleProb: 0,
         get flags() {
@@ -846,6 +947,7 @@
         },
         rMine: null,
         rMineCD: 0,
+        debug: false,
         
         chording: true,
         firstClick: 3, // 3, 1, or 0
@@ -883,7 +985,7 @@
         rColorCD: 0,
 
         coins: 1050,
-        bgm: "three",
+        bgm: "one",
         clicked: false,
         fails: 0,
         won: false,
@@ -913,7 +1015,7 @@
         nine: { 
           active: true,
           revealed: false,
-          timer: 999,
+          timer: 299,
           timerCD: 60,
           row: null,
           col: null,
@@ -931,23 +1033,78 @@
             if (checkWin()) gameOver(true);
             else gameOver(false);
           },
-          move: function() {
+          move: function(dir, test) {
+            let oldFlags = [];
             state.grid[this.row][this.col].opened = false;
             state.grid[this.row][this.col].flagged = false;
-            for (let i=-1; i<=1; i++) {
-              state.grid[this.row + i][this.col - 1].mine = state.grid[this.row + i][this.col + 2].mine;
-              state.grid[this.row + i][this.col - 1].opened = state.grid[this.row + i][this.col + 2].opened;
-            }
-            this.col++;
+            state.grid[this.row][this.col].mine = true;
             for (let i = this.row - 1; i <= this.row + 1; i++) {
               if (!state.grid[i]) continue;
+              const r = i - this.row + 1;
+              oldFlags[r] = [];
               for (let j = this.col - 1; j <= this.col + 1; j++) {
                 if (!state.grid[i][j] || i === this.row && j === this.col) continue;
-                state.grid[i][j].mine = 1; 
-                state.grid[i][j].opened = false;
+                const c = j - this.col + 1;
+                state.grid[i][j].mine = 0; 
+                oldFlags[r][c] = state.grid[i][j].flagged;
+                state.grid[i][j].flagged = false;
               }
             }
+            for (let i=-1; i<=1; i++) {
+              if (dir === "left") {
+                const moving = state.grid[this.row + i][this.col - 2];
+                const target = state.grid[this.row + i][this.col + 1];
+                target.opened = moving.opened;
+                target.mine = moving.mine;
+                moving.flagged = false;
+              } else if (dir === "right") {
+                const moving = state.grid[this.row + i][this.col + 2];
+                const target = state.grid[this.row + i][this.col - 1];
+                target.opened = moving.opened;
+                target.mine = moving.mine;
+                moving.flagged = false;
+              } else if (dir === "down") {
+                const moving = state.grid[this.row + 2][this.col + i];
+                const target = state.grid[this.row - 1][this.col + i];
+                target.opened = moving.opened;
+                target.mine = moving.mine;
+                moving.flagged = false;
+              } else if (dir === "up") {
+                const moving = state.grid[this.row - 2][this.col + i];
+                const target = state.grid[this.row + 1][this.col + i];
+                target.opened = moving.opened;
+                target.mine = moving.mine;
+                moving.flagged = false;
+              }
+            }
+            
+            if (dir === "left") {
+              this.col--;
+            } else if (dir === "right") {
+              this.col++;
+            } else if (dir === "up") {
+              this.row--;
+            } else if (dir === "down") {
+              this.row++;
+            }
+            for (let i = this.row - 1; i <= this.row + 1; i++) {
+              if (!state.grid[i]) continue;
+              const r = i - this.row + 1;
+              for (let j = this.col - 1; j <= this.col + 1; j++) {
+                if (!state.grid[i][j]) continue;
+                const c = j - this.col + 1
+                state.grid[i][j].mine = 1; 
+                state.grid[i][j].opened = false;
+                state.grid[i][j].flagged = oldFlags[r][c];
+              }
+            }
+
+            if (state.grid[this.row][this.col] === this.destination) play("nineStop");
+            else play("nineMove");
           },
+          moveCD: 10,
+          thinkCD: 0,
+          destination: null,
           reveal: function(cell) {
             this.row = cell ? cell.row : Math.floor(state.rows / 2);
             this.col = cell ? cell.col : Math.floor(state.cols / 2);
@@ -964,10 +1121,11 @@
               mus[i].currentTime = 0; 
             }  
             if (!state.suprise) mus.nineIntro.play();
+            state.bgm = "nine";
           }
         },
         ten: {
-          active: false,
+          active: true,
           revealed: false,
           activated: false,
           debug: false,
@@ -999,6 +1157,7 @@
               mus[i].currentTime = 0; 
             }  
             if (!state.suprise) mus.tenIntro.play();
+            state.bgm = "ten";
           }
         },
         eleven: {
@@ -1029,7 +1188,6 @@
             }
             found.flag();
           },
-          moveCD: 60,
         },
       }
       
@@ -1056,10 +1214,15 @@
           };
         }
       }
-      if (state.eleven.active) state.bgm = "eleven";
-      else if (state.ten.active) state.bgm = "ten";
-      else if (state.nine.active) state.bgm = "nine";
-      else state.bgm =  randomChoice(["one", "two", "three", "four", "five", "six", "seven", "eight"]);
+      if (!state.suprise && state.boss) {
+        if (state.eleven.active) state.bgm = "one"; // ???
+        else if (state.ten.active) state.bgm = "five";
+        else if (state.nine.active) state.bgm = "one";
+      } else if (state.suprise && state.boss) {
+        if (state.eleven.active) state.bgm = "eleven";
+        else if (state.ten.active) state.bgm = "ten";
+        else if (state.nine.active) state.bgm = "nine";
+      } else state.bgm =  randomChoice(["one", "two", "three", "four", "five", "six", "seven", "eight"]);
       if (state.suprise) {
         if (state.nine.active) state.nine.reveal();
         if (state.ten.active) state.ten.reveal();
