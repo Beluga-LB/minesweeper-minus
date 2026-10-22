@@ -2,10 +2,32 @@
 <html>
   <head>
     <!--<base href="https://cdn.jsdelivr.net/gh/Beluga-LB/minesweeper-minus@main/">-->
-  <!--<base href="https://raw.githubusercontent.com/Beluga-LB/minesweeper-minus/main/">-->
+    <!--<base href="https://raw.githubusercontent.com/Beluga-LB/minesweeper-minus/main/">-->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="styles.css">
+    <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    canvas {
+      width: auto;
+      height: auto;   
+      max-width: 100%; 
+      max-height: 100%; 
+      image-rendering: pixelated;
+    }
+    </style>
   </head>
   <body>
     <div id="loaderOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #111; color: #fff; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 999; font-family: monospace; padding: 20px; box-sizing: border-box;">
@@ -50,32 +72,44 @@
       zero: new Audio('mus/bgm_9.mp3'),
       one: new Audio('mus/bgm_1.mp3'),
       oneWin: new Audio('mus/win_1.mp3'),
+      oneMenu: new Audio('mus/game_select_1.mp3'),
       two: new Audio('mus/bgm_2.mp3'),
       twoWin: new Audio('mus/win_2.mp3'),
+      twoMenu: new Audio('mus/game_select_2.mp3'),
       three: new Audio('mus/bgm_3.mp3'),
       threeWin: new Audio('mus/win_3.mp3'),
+      threeMenu: new Audio('mus/game_select_3.mp3'),
       four: new Audio('mus/bgm_4.mp3'),
       fourWin: new Audio('mus/win_4.mp3'),
+      fourMenu: new Audio('mus/game_select_4.mp3'),
       five: new Audio('mus/bgm_5.mp3'),
       fiveWin: new Audio('mus/win_5.ogg'),
+      fiveMenu: new Audio('mus/game_select_5.mp3'),
       six: new Audio('mus/bgm_6.mp3'),
       sixWin: new Audio('mus/win_6.ogg'),
+      sixMenu: new Audio('mus/game_select_6.mp3'),
       seven: new Audio('mus/bgm_7.mp3'),
       sevenWin: new Audio('mus/win_7.ogg'),
+      sevenMenu: new Audio('mus/game_select_7.mp3'),
       eight: new Audio('mus/bgm_8.mp3'),
       eightWin: new Audio('mus/win_8.ogg'),
+      eightMenu: new Audio('mus/game_select_8.mp3'),
       nineIntro: new Audio('mus/9_intro.mp3'),
       nine: new Audio('mus/9_boss.mp3'),
       nineWin: new Audio('mus/9_fanfare.ogg'),
+      nineMenu: new Audio('mus/game_select_9.mp3'),
       tenIntro: new Audio('mus/10_intro.mp3'),
       ten: new Audio('mus/10_boss.mp3'),
       ten2: new Audio('mus/10_boss_2.mp3'),
       tenWin: new Audio('mus/10_fanfare.ogg'),
+      tenMenu: new Audio('mus/game_select_10.mp3'),
       elevenIntro: new Audio('mus/11_intro.mp3'),
       eleven: new Audio('mus/11_boss.mp3'),
       eleven2: new Audio('mus/11_boss_2.mp3'),
       elevenWin: new Audio('mus/11_fanfare.ogg'),
+      elevenMenu: new Audio('mus/game_select_11.mp3'),
     }
+    mus.nine.loopStart = 11.0;
     mus.nineIntro.loopStart = 26.7;
     mus.tenIntro.loopStart = 23.7;
     mus.elevenIntro.loopStart = 43.2;
@@ -124,6 +158,10 @@
     }
 
     const img = {
+      ButtonA: new Image(),
+      ButtonB: new Image(),
+      ButtonC: new Image(),
+      ButtonD: new Image(),
       mineCounter1: new Image(),
       mineCounter2: new Image(),
       clock1: new Image(),
@@ -189,12 +227,26 @@
       logToConsole("[System] Force-starting game despite missing assets.");
     }
 
-    const flagRow = [1,2,3,-1,-2,-3,9]
     let state = {};
+    let permState = {
+      mouse: {
+        x: 0,
+        y: 0,
+        r: 1, // collision purposes
+      },
+      menu: "main",
+      mode: "debug",
+      master: false,
+      stage: 1,
+      lives: 3,
+      shields: 0,
+      coins: 1050,
+      clock: 0,
+    };
     let loopId;
     let started = false;
 
-    const maps = {
+    const maps = { // rows, cols, mines
       beginner: [
         [],
         [],
@@ -204,7 +256,7 @@
         [],
         [],
         [],
-        [13, 19, 48],
+        [],
       ],
       novice: [
         [],
@@ -215,7 +267,7 @@
         [],
         [],
         [],
-        [13, 19, 48],
+        [],
       ],
       advanced: [
         [],
@@ -226,7 +278,7 @@
         [],
         [],
         [],
-        [13, 19, 48],
+        [],
       ],
       expert: [
         [],
@@ -240,6 +292,17 @@
         [13, 19, 48],
       ],
     }
+
+    const buttons = {
+      A: {
+        x: 100,
+        y: 128,
+        w: 448,
+        h: 512
+      }
+    }
+    
+    const flagRow = [1,2,3,-1,-2,-3,9]
 
     const outlineColor = [
       0,
@@ -268,14 +331,189 @@
       ten: 9,
       eleven: 10,
     }
+
+    class bossNine {
+      constructor()  {
+        this.active = true;
+        this.revealed = false;
+        this.timer = 999;
+        this.timerCD = 60;
+        this.row = null;
+        this.col = null;
+        this.moveCD = 10;
+        this.thinkCD = 0;
+        this.destination = null;
+      }
+
+      get x() {
+        return this.col * state.cellSize;
+      };
+      get y() {
+        return this.row * state.cellSize;
+      };
+      cell(cell) {
+        return this.row === cell.row && this.col === cell.col && state.nine.active; 
+      };
+      click() {
+        if (!state.clicked) placeMines();
+        if (checkWin()) gameOver(true);
+        else gameOver(false);
+      };
+      move(dir, test) {
+        let oldFlags = [];
+        state.grid[this.row][this.col].opened = false;
+        state.grid[this.row][this.col].flagged = false;
+        state.grid[this.row][this.col].mine = true;
+        for (let i = this.row - 1; i <= this.row + 1; i++) {
+          if (!state.grid[i]) continue;
+          const r = i - this.row + 1;
+          oldFlags[r] = [];
+          for (let j = this.col - 1; j <= this.col + 1; j++) {
+            if (!state.grid[i][j] || this.cell(state.grid[i][j])) continue;
+            const c = j - this.col + 1;
+            state.grid[i][j].mine = 0; 
+            oldFlags[r][c] = state.grid[i][j].flagged;
+            state.grid[i][j].flagged = false;
+          }
+        }
+        let oob = false;
+        for (let i=-1; i<=1; i++) {
+          if (dir === "left") {
+            const moving = state.grid[this.row + i][this.col - 2];
+            if (!moving) {
+              oob = true;
+              break;
+            }
+            const target = state.grid[this.row + i][this.col + 1];
+            target.opened = moving.opened;
+            target.mine = moving.mine;
+            if (!moving.mine) moving.flagged = false;
+          } else if (dir === "right") {
+            const moving = state.grid[this.row + i][this.col + 2];
+            if (!moving) {
+              oob = true;
+              break;
+            }
+            const target = state.grid[this.row + i][this.col - 1];
+            target.opened = moving.opened;
+            target.mine = moving.mine;
+            if (!moving.mine) moving.flagged = false;
+          } else if (dir === "down") {
+            const moving = state.grid[this.row + 2][this.col + i];
+            if (!moving) {
+              oob = true;
+              break;
+            }
+            const target = state.grid[this.row - 1][this.col + i];
+            target.opened = moving.opened;
+            target.mine = moving.mine;
+            if (!moving.mine) moving.flagged = false;
+          } else if (dir === "up") {
+            const moving = state.grid[this.row - 2][this.col + i];
+            if (!moving) {
+              oob = true;
+              break;
+            }
+            const target = state.grid[this.row + 1][this.col + i];
+            target.opened = moving.opened;
+            target.mine = moving.mine;
+            if (!moving.mine) moving.flagged = false;
+          }
+        }
+        if (oob) {
+          this.destination = null;
+        } else {
+          if (dir === "left") this.col--;
+          else if (dir === "right") this.col++;
+          else if (dir === "up")  this.row--;
+          else if (dir === "down") this.row++;
+        }
+        for (let i = this.row - 1; i <= this.row + 1; i++) {
+          if (!state.grid[i]) continue;
+          const r = i - this.row + 1;
+          for (let j = this.col - 1; j <= this.col + 1; j++) {
+            if (!state.grid[i][j]) continue;
+            const c = j - this.col + 1
+            state.grid[i][j].mine = 1; 
+            state.grid[i][j].opened = false;
+            state.grid[i][j].flagged = oldFlags[r][c];
+          }
+        }
+
+        if (oob) return;
+        if (state.grid[this.row][this.col] === this.destination) play("nineStop");
+        else play("nineMove");
+        state.shake += 1
+      };
+    
+      reveal(cell) {
+        this.row = cell ? cell.row : Math.floor(state.rows / 2);
+        this.col = cell ? cell.col : Math.floor(state.cols / 2);
+        this.revealed = true; 
+        for (let i = this.row - 1; i <= this.row + 1; i++) {
+          if (!state.grid[i]) continue;
+          for (let j = this.col - 1; j <= this.col + 1; j++) {
+            if (!state.grid[i][j] || i === this.row && j === this.col) continue;
+            state.grid[i][j].mine = 1; 
+          }
+        }
+        for (let i in mus) {
+          mus[i].pause();
+          mus[i].currentTime = 0; 
+        }  
+        if (!state.suprise) mus.nineIntro.play();
+        state.bgm = "nine";
+      } 
+    }
+
+    class bossTen {
+      constructor() {
+        this.active = true;
+        this.revealed = false;
+        this.activated = false;
+        this.debug = false;
+        this.time = 10;
+        this.x = canvas.width / 2;
+        this.y = canvas.height / 2;
+        this.r = 50;
+        this.speed = 0;
+        this.angle = 0;
+        this.beepcd = 0;
+        this.pistoncd = 0;
+        this.shake = 0;
+        this.shakeOffset = 0;
+      }
+      click() {
+        play("tenReset")
+        if (!this.activated) this.activated = true;
+        this.time = 10;
+        this.speed += 0.2;
+        this.angle = Math.random() * Math.PI * 2;
+      };
+      reveal(cell) {
+        if (cell) {
+          this.x = cell.col * state.cellSize + state.cellSize / 2;
+          this.y = cell.row * state.cellSize + state.cellSize / 2 + 100;
+        }
+        this.revealed = true;
+        state.ten.revealed++;
+        for (let i in mus) {
+          mus[i].pause();
+          mus[i].currentTime = 0; 
+        }  
+        if (!state.suprise) mus.tenIntro.play();
+        state.bgm = "ten";
+      }
+    }
     
     window.addEventListener('mousemove', (e) => {
       if (!started) return;
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
-      state.mouse.x = (e.clientX - rect.left) * scaleX;
-      state.mouse.y = (e.clientY - rect.top) * scaleY;
+      permState.mouse.x = (e.clientX - rect.left) * scaleX;
+      permState.mouse.y = (e.clientY - rect.top) * scaleY;
+      if (permState.menu !== "game") return;
       state.mouse.zoomX = (state.mouse.x - canvas.width / 2) / state.cam.zoom + canvas.width / 2 - state.cam.x;
       state.mouse.zoomY = (state.mouse.y - canvas.height / 2) / state.cam.zoom + canvas.height / 2 - state.cam.y;
       
@@ -286,7 +524,12 @@
     });
     
     canvas.addEventListener('mousedown', (e) => {
-      if (!started || (state.ten.active && checkCircleCollision(state.ten, state.mouse)) || state.over) return;
+      if (!started || permState.menu !== "game") return;
+      let overTen = false;
+      for (let i=0; i<state.ten?.amount; i++) {
+        if (checkCircleCollision(state.ten.tens[i], state.mouse)) overTen = true;
+      }
+      if (!started || (state.ten.active && overTen) || state.over) return;
       const c = Math.floor(state.mouse.zoomX / state.cellSize);
       const r = Math.floor((state.mouse.zoomY - 100) / state.cellSize);
       const cell = state.grid[r]?.[c];
@@ -299,20 +542,28 @@
     
     window.addEventListener('mouseup', () => {
       if (state.over) return;
-      if (state.pressedCell) {
-        state.pressedCell = null;
-        draw();
-      }
+      if (state.pressedCell) state.pressedCell = null;
     });
 
     canvas.addEventListener('click', (e) => {
       if (!started) {
-        init();
+        start();
+        return;
+      } else if (permState.menu === "main") {
+        if (checkCircleRectCollision(permState.mouse, buttons.A)) init();
         return;
       }
       if (state.over) return;
-      if (state.ten.revealed && checkCircleCollision(state.ten, state.mouse)) {
-        state.ten.click();
+      let overTen = false;
+      let specificTens = [];
+      for (let i=0; i<state.ten?.amount; i++) {
+        if (checkCircleCollision(state.ten.tens[i], state.mouse)) {
+          overTen = true;
+          specificTens.push(i);
+        }
+      }
+      if (state.ten?.revealed >= state.ten?.amount && overTen) {
+        for (let i=0; i<state.ten?.amount; i++) if (specificTens.includes(i)) state.ten.tens[i].click();
         return;
       };
       const sonar = {
@@ -326,7 +577,7 @@
       const r = Math.floor((state.mouse.zoomY - 100) / state.cellSize);
       const cell = state.grid[r]?.[c];
       if (!cell) return;
-      if (cell.row === state.nine.row && cell.col === state.nine.col) {
+      if (state.nine.cell(cell)) {
         state.nine.click();
         return;
       };
@@ -334,8 +585,14 @@
       if (!state.clicked) {
         if (state.nine.active && !state.nine.revealed) {
           state.nine.reveal(cell);
-        } else if (state.ten.active && !state.ten.revealed && !state.nine.cell(cell)) {
-          state.ten.reveal(cell);
+        } else if (state.ten.active && state.ten.revealed < state.ten.amount && !state.nine.cell(cell)) {
+          for (let i=0; i<state.ten.amount; i++) {
+            if (!state.ten.tens[i].revealed) {
+              state.ten.tens[i].reveal(cell);
+              break;
+            };
+            console.log(i)
+          }
           return;
         } /*else if (state.eleven.active && !state.eleven.revealed) {
 
@@ -346,10 +603,19 @@
     });
 
     canvas.addEventListener('contextmenu', (e) => {
-      if (state.over) return;
       e.preventDefault();
-      if (state.ten.revealed && checkCircleCollision(state.ten, state.mouse)) {
-        state.ten.click();
+      if (state.over || !started || permState.menu !== "game") return;
+
+      let overTen = false;
+      let specificTens = [];
+      for (let i=0; i<state.ten?.amount; i++) {
+        if (checkCircleCollision(state.ten.tens[i], state.mouse)) {
+          overTen = true;
+          specificTens.push(i);
+        }
+      }
+      if (state.ten?.revealed >= state.ten?.amount && overTen) {
+        for (let i=0; i<state.ten?.amount; i++) if (specificTens.includes(i)) state.ten.tens[i].click();
         return;
       };
       const c = Math.floor(state.mouse.zoomX / state.cellSize);
@@ -363,6 +629,8 @@
     
     window.addEventListener('wheel', (e) => {
       e.preventDefault();
+      if (permState.menu !== "game") return;
+
       const zoomIntensity = 0.1;
       if (e.deltaY < 0) {
         state.cam.zoom = Math.min(state.cam.zoom + zoomIntensity, 3.0);
@@ -386,6 +654,7 @@
     });
 
     function openCell(cell, comeFromChord = false, comeFromSpread = false) {
+      if (!cell) return;
       if (cell.flagged || (comeFromChord && cell.opened)) return;
       if (cell.opened) {
         if (state.chording && !comeFromSpread) chordCell(cell, comeFromSpread);
@@ -476,8 +745,8 @@
     function checkWin() {
       for (let i = 0; i < state.rows; i++) {
         for (let j = 0; j < state.cols; j++) {
-          const cell = state.grid[i][j];
-          if (cell.mine) continue;
+          const cell = state.grid[i]?.[j];
+          if (!cell || cell.mine) continue;
           if (!cell.opened) return false;
         }
       }
@@ -488,12 +757,13 @@
       if (state.over) return;
       if (win) state.won = true;
       else state.lost = true;
-      if (state.ten.active) state.ten.time = win ? 10 : 0;
+      if (state.ten.active) for (let i=0; i<state.ten.amount; i++) state.ten.time = win ? 10 : 0;
       for (let i in mus) {
         mus[i].pause();
         mus[i].currentTime = 0; 
       }  
       if (state.won) mus[state.bgm + "Win"].play();
+      state.completionTime = state.clock;
 
       for (let i = 0; i < state.rows; i++) {
         if (!state.grid[i]) continue;
@@ -507,7 +777,7 @@
     }
 
     function cellValue(cell, flags = false, anti = false) {
-      if (!cell.opened && !cell.flagged) return "";
+      if (!cell || (!cell.opened && !cell.flagged)) return "";
       if (state.nine.active && cell === state.grid[state.nine.row][state.nine.col]) return 9;
       if (cell.mine && cell.opened) {
         let Xs = "";
@@ -527,7 +797,7 @@
         if (i < 0 || i >= state.rows) continue;
         for (let j = c - 1; j <= c + 1; j++) {
           const neighbor = state.grid[i][j];
-          if (j < 0 || j >= state.cols || neighbor === cell) continue;
+          if (!neighbor || j < 0 || j >= state.cols || neighbor === cell) continue;
           if (anti) {
             if (neighbor.mine && !flags) count += Math.abs(neighbor.mine);
             else if (neighbor.flagged && flags) count += Math.abs(neighbor.flagged);
@@ -541,6 +811,7 @@
     }
 
     function placeMines(cell) {
+      if (!cell) return;
       if (state.clicked) return;
       state.clicked = true;
       if (!state.suprise && state.boss) {
@@ -555,6 +826,7 @@
         const r = Math.floor(Math.random() * state.rows);
         const c = Math.floor(Math.random() * state.cols);
         const mine = state.grid[r][c];
+        if (!mine) continue;
         let near = cell ? Math.abs(r - cell.row) <= 1 && Math.abs(c - cell.col) <= 1 : false;
         if (cell) {
           if ((state.rows <= 3 && state.cols <= 3) || state.firstClick === 1) near = r === cell.row && c === cell.col
@@ -573,11 +845,30 @@
       const soundClone = aud[sound].cloneNode();
       soundClone.volume = 1;
       soundClone.play();
-      if (sound === "tenBeep") state.ten.beepcd = Math.max(Math.floor(state.ten.time) * 10, 4)
     }
     
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (permState.menu === "main") {
+        const bgMinR = 0;
+        const bgMaxR = 16;
+        const bgMinC = 0;
+        const bgMaxC = 28;
+        
+        let tileSize = 64;
+        let offsetX = (Math.floor(permState.clock / 30) + 1) % 2 + 2;
+        let offsetY = bgmTheme["one"];
+        
+        for (let r = bgMinR; r < bgMaxR; r++) {
+          for (let c = bgMinC; c < bgMaxC; c++) {
+            const x = c * 48;
+            const y = r * 48;
+            ctx.drawImage(img.water, offsetX * tileSize, offsetY * tileSize, tileSize, tileSize, x, y, 48, 48);
+          }
+        }
+        ctx.drawImage(img.ButtonA, buttons.A.x, buttons.A.y, buttons.A.w, buttons.A.h)
+        return;
+      }
       ctx.save();
       if (state.shake > 0) {
         const force = 3;
@@ -598,7 +889,7 @@
       const bgMaxC = state.cols + 30;
       
       let tileSize = 64;
-      let offsetX = (Math.floor(state.clock / 30) + 1) % 2 + 2;
+      let offsetX = (Math.floor(permState.clock / 30) + 1) % 2 + 2;
       let offsetY = bgmTheme[state.bgm];
       
       for (let r = bgMinR; r < bgMaxR; r++) {
@@ -611,10 +902,11 @@
       for (let r = 0; r < state.rows; r++) {
         for (let c = 0; c < state.cols; c++) {
           const cell = state.grid[r][c];
+          if (!cell) continue;
           let value = cellValue(cell);
           const x = c * state.cellSize;
           const y = r * state.cellSize;
-          offsetX = (Math.floor(state.clock / 30) + 1) % 2;
+          offsetX = (Math.floor(permState.clock / 30) + 1) % 2;
           offsetY = bgmTheme[state.bgm];
           let outline = false;
           
@@ -666,7 +958,19 @@
           }
           if (outline) ctx.drawImage(img["white_outline"], x, y, state.cellSize, state.cellSize)
           
-          if ((img.Numbers && value >= 0) || (img.NumbersNegative && value <= 0)) {
+          if (state.nine.cell(cell) && state.won) {
+            const col = (Math.floor(state.clock / 30) % 2);
+            let row = 6;
+            let tileSize = 64;
+            let sx = col * tileSize;
+            let sy = row * tileSize;
+
+            ctx.drawImage(
+              img.flags,
+              sx, sy, tileSize, tileSize,
+              x + 4, y + 4, state.cellSize - 8, state.cellSize - 8
+            )
+          } else if ((img.Numbers && value >= 0) || (img.NumbersNegative && value <= 0)) {
             const visValue = cellValue(cell, false, false);
             const absValue = cellValue(cell, false, true);
             let anti = "";
@@ -699,7 +1003,6 @@
             else if (cell.flagged === -1) row = 3;
             else if (cell.flagged === -2) row = 4;
             else if (cell.flagged === -3) row = 5;
-            else if (state.nine.cell(cell) && state.over) row = 6;
 
             let tileSize = 64;
             let sx = col * tileSize;
@@ -712,8 +1015,8 @@
           }
         }
       }
-      if (state.nine.revealed) {
-        const nineCell = state.grid[state.nine.row][state.grid.col];
+      if (state.nine.revealed && !state.won) {
+        const nineCell = state.grid[state.nine.row][state.nine.col];
         const target = state.grid[state.nine.row][state.nine.col + 2];
         const moving = state.grid[state.nine.row][state.nine.col - 1];
 
@@ -740,72 +1043,72 @@
       if (img.mineCounter1 && img.mineCounter2) ctx.drawImage(img[`mineCounter${((Math.floor(state.clock / 30) + 1) % 2) + 1}`], 0, 0, 100, 100)
       const m = state.minesLeft === "???" ? state.minesLeft : Math.min(999, Math.max(-99, state.minesLeft));
       const dm = m < 0 ? `-${String(Math.abs(m)).padStart(2, '0')}` : String(m).padStart(3, '0');
-      text(dm, 110, 55, red, 72, "serif", "left", "middle", "#FFF", 4)     
+      text(dm, 110, 55, red, 72, "sans-serif", "left", "middle", "#FFF", 4)     
       
       rect(240, 0, 240 ,100 , charcoal, silver)
       text(`\$${Math.min(9999, state.coins)}`, 250, 55, "#FFF", 72, "monospace", "left", "middle")
       
       rect(canvas.width - 230, 0, 230 ,100 , charcoal, silver)
-      if (img.clock1 && img.clock2) ctx.drawImage(img[`clock${((Math.floor(state.clock / 30) + 1) % 2) + 1}`], canvas.width - 230, 0, 100, 100)
-      const t = String(Math.min(999, Math.max(0, state.nine.revealed ? state.nine.timer : Math.floor(state.clock / 60)))).padStart(3, '0')
-      text(t, canvas.width - 10, 55, red, 72, "serif", "right", "middle", "#FFF", 4)
+      if (img.clock1 && img.clock2) ctx.drawImage(img[`clock${((Math.floor((state.clock) / 30) + 1) % 2) + 1}`], canvas.width - 230, 0, 100, 100)
+      const t = String(Math.min(999, Math.max(0, state.nine.revealed ? state.nine.timer : Math.floor((state.over ? state.completionTime : state.clock) / 60)))).padStart(3, '0')
+      text(t, canvas.width - 10, 55, red, 72, "sans-serif", "right", "middle", "#FFF", 4)
       
-      if (state.ten.revealed) {
-        if (img.tenPiston) {
-          ctx.save();
-            ctx.filter = 'brightness(200%)';
-            ctx.translate(state.ten.x, state.ten.y);
-            for (let i = 0; i < 5; i++) {
-              const basePattern = [1, 2, 1, 0];
-              const altPattern  = [1, 0, 1, 2];
-              let speed = 4;
-              if (Math.ceil(state.ten.time) <= 4) speed *= Math.ceil(state.ten.time) + (4 - Math.ceil(state.ten.time)) * 3
-              
-              let patternIndex = Math.floor(state.ten.time * speed) % basePattern.length;
-              
-              let scaleState;
-              scaleState = i % 2 === 0 ? basePattern[patternIndex] : altPattern[patternIndex];
-              
-              const w = state.ten.r * 4;
-              let h = w;
-              if (scaleState === 0) h -= 30;
-              if (scaleState === 2) h += 30;
-              
-              ctx.drawImage(img.tenPiston, -state.ten.r * 2, -state.ten.r * 2 + ((w - h) / 2), w, h);
-              ctx.rotate((36 * Math.PI) / 180);
-            }
-          ctx.restore();
-        }
-        if (img.tenBody) {
-          ctx.save();
-            let factor = 1 - Math.min(10, Math.max(0, Math.ceil(state.ten.time))) / 10;
-            let brightnessVal = 200 - (150 * factor);
-            ctx.filter = `brightness(${brightnessVal}%)`;
-            ctx.drawImage(img.tenBody, state.ten.x - state.ten.r * 2, state.ten.y - state.ten.r * 2, state.ten.r * 4, state.ten.r * 4);
-          ctx.restore();
-        }
-        else {
-          circle(state.ten.x, state.ten.y, state.ten.r, charcoal);
-          rect(state.ten.x - 50, state.ten.y - 50, 100, 100, emerald)
-        }
-        if (img.Numbers10) {
-          ctx.save();
-            if (state.ten.time <= 0) ctx.filter = 'sepia(100%) saturate(500%) hue-rotate(310deg) brightness(67%)';
-            let num = Math.min(10, Math.max(0, Math.ceil(state.ten.time)));
-            let tileSize = 64;
-            let col = num % 4;
-            let row = Math.floor(num / 4);
-            let sx = col * tileSize;
-            let sy = row * tileSize;
-            let drawSize = 4 * state.ten.r / 3;
-            ctx.drawImage(
-              img.Numbers10,
-              sx, sy, tileSize, tileSize, 
-              state.ten.x - drawSize / 2, state.ten.y - drawSize / 2, drawSize, drawSize
-            );
-          ctx.restore();
-        } else text(Math.ceil(state.ten.time), state.ten.x, state.ten.y, "#FFF", 96, "monospace", "center", "middle")
-      };
+      for (let i = 0; i<state.ten.amount; i++) {
+        const boss = state.ten.tens[i];
+        if (boss.revealed) {
+          if (img.tenPiston) {
+            ctx.save();
+              ctx.filter = 'brightness(200%)';
+              ctx.translate(boss.x, boss.y);
+              for (let i = 0; i < 5; i++) {
+                const basePattern = [1, 2, 1, 0];
+                const altPattern  = [1, 0, 1, 2];
+                let speed = 4;
+                if (Math.ceil(boss.time) <= 4) speed *= Math.ceil(boss.time) + (4 - Math.ceil(boss.time)) * 3
+                
+                let patternIndex = Math.floor(boss.time * speed) % basePattern.length;
+                
+                let scaleState;
+                scaleState = i % 2 === 0 ? basePattern[patternIndex] : altPattern[patternIndex];
+                
+                const w = boss.r * 4;
+                let h = w;
+                if (scaleState === 0) h -= 30;
+                if (scaleState === 2) h += 30;
+                
+                ctx.drawImage(img.tenPiston, -boss.r * 2, -boss.r * 2 + ((w - h) / 2), w, h);
+                ctx.rotate((36 * Math.PI) / 180);
+              }
+            ctx.restore();
+          }
+          if (img.tenBody) {
+            ctx.save();
+              let factor = 1 - Math.min(10, Math.max(0, Math.ceil(boss.time))) / 10;
+              let brightnessVal = 200 - (150 * factor);
+              ctx.filter = `brightness(${brightnessVal}%)`;
+              ctx.drawImage(img.tenBody, boss.x - boss.r * 2, boss.y - boss.r * 2, boss.r * 4, boss.r * 4);
+            ctx.restore();
+          }
+          else console.error("Ten's body doesn't exist!")
+          if (img.Numbers10) {
+              ctx.save();
+                if (boss.time <= 0) ctx.filter = 'sepia(100%) saturate(500%) hue-rotate(310deg) brightness(67%)';
+                let num = Math.min(10, Math.max(0, Math.ceil(boss.time)));
+                let tileSize = 64;
+                let col = num % 4;
+                let row = Math.floor(num / 4);
+                let sx = col * tileSize;
+                let sy = row * tileSize;
+                let drawSize = 4 * boss.r / 3;
+                ctx.drawImage(
+                  img.Numbers10,
+                  sx, sy, tileSize, tileSize, 
+                  boss.x - drawSize / 2, boss.y - drawSize / 2, drawSize, drawSize
+                );
+              ctx.restore();
+          } else console.error("Uh oh; 10's numbers don't exist!")
+        };
+      }
       if (state.won || state.lost) {
         ctx.translate(0,100)
         rect(0, canvas.height / 2 - 60, canvas.width, 72, charcoal);
@@ -816,7 +1119,13 @@
     }
 
     function loop() {
-      if ((state.clicked || state.suprise) && !state.over) state.clock++;
+      permState.clock++;
+      if (permState.menu === "main") {
+        draw();
+        loopId = requestAnimationFrame(loop);
+        return;
+      }
+      if (state.clicked || state.suprise) state.clock++;
       if (keys['w'] || keys['arrowup'])    state.cam.y += state.cam.speed;
       if (keys['s'] || keys['arrowdown'])  state.cam.y -= state.cam.speed;
       if (keys['a'] || keys['arrowleft'])  state.cam.x += state.cam.speed;
@@ -836,15 +1145,33 @@
         }
         if (state.nine.thinkCD <= 0) {
           state.nine.thinkCD = Math.random() * 130 + 20;
-          let dir = randomChoice(["row", "col"]);
-          if (dir === "row") state.nine.destination = state.grid[Math.floor(1 + Math.random() * (state.rows - 2))][nineCell.col];
-          else if (dir === "col") state.nine.destination = state.grid[nineCell.row][Math.floor(1 + Math.random() * (state.cols - 2))];
+          let validDest = false;
+          let attempts = 0;
+          
+          while (!validDest && attempts < 50) {
+            attempts++;
+            let dir = randomChoice(["row", "col"]);
+            let targetCell = null;
+            
+            if (dir === "row") {
+              let r = Math.floor(1 + Math.random() * (state.rows - 2));
+              targetCell = state.grid[r]?.[nineCell.col];
+            } else if (dir === "col") {
+              let c = Math.floor(1 + Math.random() * (state.cols - 2));
+              targetCell = state.grid[nineCell.row]?.[c];
+            }
+            
+            if (targetCell) {
+              state.nine.destination = targetCell;
+              validDest = true;
+            }
+          }
         } else if (state.nine.moveCD <= 0) {
-          state.nine.moveCD = 6;
-          if (state.nine.destination.row === nineCell.row) {
+          state.nine.moveCD = 10;
+          if (state.nine.destination && state.nine.destination.row === nineCell.row) {
             if (state.nine.destination.col > nineCell.col) state.nine.move("right");
             else if (state.nine.destination.col < nineCell.col) state.nine.move("left");
-          } else if (state.nine.destination.col === nineCell.col) {
+          } else if (state.nine.destination && state.nine.destination.col === nineCell.col) {
             if (state.nine.destination.row > nineCell.row) state.nine.move("down");
             else if (state.nine.destination.row < nineCell.row) state.nine.move("up");
           }
@@ -856,33 +1183,36 @@
         if (state.nine.timer <= 0) gameOver();
       }
       if (state.ten.active) {
-        if (state.clicked && !state.ten.activated) state.ten.activated = true
-        if (state.ten.activated && !state.over && !state.ten.debug) state.ten.time -= (1 + state.fails * 0.1)/60;
-        if (state.ten.time < 4 && state.ten.time > 0 && state.ten.beepcd <= 0) play("tenBeep");
-        state.ten.beepcd--;
-        if (state.ten.time <= 0 && !state.lost) gameOver();
-        moveAtAngle(state.ten, state.ten.angle, state.ten.speed);
+        for (let i=0; i<state.ten.amount; i++) {
+          const boss = state.ten.tens[i];
+          if (state.clicked && !boss.activated) boss.activated = true
+          if (boss.activated && !state.over && !boss.debug) boss.time -= (1 + state.fails * 0.1)/60;
+          if (boss.time < 4 && boss.time > 0 && boss.beepcd <= 0) {play("tenBeep"); boss.beepcd = Math.max(Math.floor(boss.time) * 10, 4)};
+          boss.beepcd--;
+          if (boss.time <= 0 && !state.lost) gameOver();
+          moveAtAngle(boss, boss.angle, boss.speed);
 
-        if (state.ten.x - state.ten.r <= 0) {
-          state.ten.x = state.ten.r;
-          state.ten.angle = Math.PI - state.ten.angle; 
-          play("tenBounce")
-          state.shake += 5;
-        } else if (state.ten.x + state.ten.r >= canvas.width) {
-          state.ten.x = canvas.width - state.ten.r;
-          state.ten.angle = Math.PI - state.ten.angle;
-          play("tenBounce")
-          state.shake += 5;
-        }; if (state.ten.y - state.ten.r <= 0) {
-          state.ten.y = state.ten.r;
-          state.ten.angle = -state.ten.angle; 
-          play("tenBounce")
-          state.shake += 5;
-        } else if (state.ten.y + state.ten.r >= canvas.height) {
-          state.ten.y = canvas.height - state.ten.r;
-          state.ten.angle = -state.ten.angle;
-          play("tenBounce")
-          state.shake += 5;
+          if (boss.x - boss.r <= 0) {
+            boss.x = boss.r;
+            boss.angle = Math.PI - boss.angle; 
+            play("tenBounce")
+            state.shake += 5;
+          } else if (boss.x + boss.r >= canvas.width) {
+            boss.x = canvas.width - boss.r;
+            boss.angle = Math.PI - boss.angle;
+            play("tenBounce")
+            state.shake += 5;
+          }; if (boss.y - boss.r <= 0) {
+            boss.y = boss.r;
+            boss.angle = -boss.angle; 
+            play("tenBounce")
+            state.shake += 5;
+          } else if (boss.y + boss.r >= canvas.height) {
+            boss.y = canvas.height - boss.r;
+            boss.angle = -boss.angle;
+            play("tenBounce")
+            state.shake += 5;
+          }
         }
       }
       if (state.eleven.active) {
@@ -899,19 +1229,14 @@
       loopId = requestAnimationFrame(loop);
     }
 
-    function init() {
-      started = true;
-      if (loopId) cancelAnimationFrame(loopId);
+    async function init() {
       for (let i in mus) {
         mus[i].pause();
         mus[i].currentTime = 0; 
-      }  
-      state = {
-        mouse: {
-          x: 0,
-          y: 0,
-          r: 1, // collision purposes
-        },
+      } 
+      state = { 
+        get mouse() {return permState.mouse},
+        set mouse(val) {permState.mouse = val},
         cam: {
           x: 0,
           y: 0,
@@ -919,12 +1244,12 @@
           speed: 10,
         },
         grid: [],
-        cols: 30,
-        rows: 16,
+        cols: 13,
+        rows: 13,
         get cellSize() {
           return Math.max(40, Math.floor(1200 / this.cols))
         },
-        mines: 99,
+        mines: 29,
         antiProb: 0,
         doubleProb: 0,
         get flags() {
@@ -984,7 +1309,17 @@
         rColor: null,
         rColorCD: 0,
 
-        coins: 1050,
+        get coins() {return permState.coins},
+        set coins(val) {permState.coins = val;},
+
+        get mode() {return permState.mode},
+        set mode(val) {permState.mode = val;},
+
+        get lives() {return permState.lives},
+        set lives(val) {permState.lives = val;},
+
+        get stage() {return permState.stage},
+        set stage(val) {permState.stage = val;},
         bgm: "one",
         clicked: false,
         fails: 0,
@@ -1012,153 +1347,12 @@
           return this.nine.revealed || this.ten.revealed || this.eleven.revealed
         },
         suprise: false,
-        nine: { 
-          active: true,
-          revealed: false,
-          timer: 299,
-          timerCD: 60,
-          row: null,
-          col: null,
-          get x() {
-            return this.col * state.cellSize;
-          },
-          get y() {
-            return this.row * state.cellSize;
-          },
-          cell: function(cell) {
-            return this.row === cell.row && this.col === cell.col && state.nine.active; 
-          },
-          click: function() {
-            if (!state.clicked) placeMines();
-            if (checkWin()) gameOver(true);
-            else gameOver(false);
-          },
-          move: function(dir, test) {
-            let oldFlags = [];
-            state.grid[this.row][this.col].opened = false;
-            state.grid[this.row][this.col].flagged = false;
-            state.grid[this.row][this.col].mine = true;
-            for (let i = this.row - 1; i <= this.row + 1; i++) {
-              if (!state.grid[i]) continue;
-              const r = i - this.row + 1;
-              oldFlags[r] = [];
-              for (let j = this.col - 1; j <= this.col + 1; j++) {
-                if (!state.grid[i][j] || i === this.row && j === this.col) continue;
-                const c = j - this.col + 1;
-                state.grid[i][j].mine = 0; 
-                oldFlags[r][c] = state.grid[i][j].flagged;
-                state.grid[i][j].flagged = false;
-              }
-            }
-            for (let i=-1; i<=1; i++) {
-              if (dir === "left") {
-                const moving = state.grid[this.row + i][this.col - 2];
-                const target = state.grid[this.row + i][this.col + 1];
-                target.opened = moving.opened;
-                target.mine = moving.mine;
-                moving.flagged = false;
-              } else if (dir === "right") {
-                const moving = state.grid[this.row + i][this.col + 2];
-                const target = state.grid[this.row + i][this.col - 1];
-                target.opened = moving.opened;
-                target.mine = moving.mine;
-                moving.flagged = false;
-              } else if (dir === "down") {
-                const moving = state.grid[this.row + 2][this.col + i];
-                const target = state.grid[this.row - 1][this.col + i];
-                target.opened = moving.opened;
-                target.mine = moving.mine;
-                moving.flagged = false;
-              } else if (dir === "up") {
-                const moving = state.grid[this.row - 2][this.col + i];
-                const target = state.grid[this.row + 1][this.col + i];
-                target.opened = moving.opened;
-                target.mine = moving.mine;
-                moving.flagged = false;
-              }
-            }
-            
-            if (dir === "left") {
-              this.col--;
-            } else if (dir === "right") {
-              this.col++;
-            } else if (dir === "up") {
-              this.row--;
-            } else if (dir === "down") {
-              this.row++;
-            }
-            for (let i = this.row - 1; i <= this.row + 1; i++) {
-              if (!state.grid[i]) continue;
-              const r = i - this.row + 1;
-              for (let j = this.col - 1; j <= this.col + 1; j++) {
-                if (!state.grid[i][j]) continue;
-                const c = j - this.col + 1
-                state.grid[i][j].mine = 1; 
-                state.grid[i][j].opened = false;
-                state.grid[i][j].flagged = oldFlags[r][c];
-              }
-            }
-
-            if (state.grid[this.row][this.col] === this.destination) play("nineStop");
-            else play("nineMove");
-          },
-          moveCD: 10,
-          thinkCD: 0,
-          destination: null,
-          reveal: function(cell) {
-            this.row = cell ? cell.row : Math.floor(state.rows / 2);
-            this.col = cell ? cell.col : Math.floor(state.cols / 2);
-            this.revealed = true; 
-            for (let i = this.row - 1; i <= this.row + 1; i++) {
-              if (!state.grid[i]) continue;
-              for (let j = this.col - 1; j <= this.col + 1; j++) {
-                if (!state.grid[i][j] || i === this.row && j === this.col) continue;
-                state.grid[i][j].mine = 1; 
-              }
-            }
-            for (let i in mus) {
-              mus[i].pause();
-              mus[i].currentTime = 0; 
-            }  
-            if (!state.suprise) mus.nineIntro.play();
-            state.bgm = "nine";
-          }
-        },
+        nine: new bossNine(),
         ten: {
-          active: true,
-          revealed: false,
-          activated: false,
-          debug: false,
-          time: 10,
-          x: canvas.width / 2,
-          y: canvas.height / 2,
-          r: 50,
-          speed: 0,
-          angle: 0,
-          beepcd: 0,
-          pistoncd: 0,
-          shake: 0,
-          shakeOffset: 0,
-          click: function() {
-            play("tenReset")
-            if (!this.activated) this.activated = true;
-            this.time = 10;
-            this.speed += 0.2;
-            this.angle = Math.random() * Math.PI * 2;
-          },
-          reveal: function(cell) {
-            if (cell) {
-              this.x = cell.col * state.cellSize + state.cellSize / 2;
-              this.y = cell.row * state.cellSize + state.cellSize / 2 + 100;
-            }
-            this.revealed = true;
-            for (let i in mus) {
-              mus[i].pause();
-              mus[i].currentTime = 0; 
-            }  
-            if (!state.suprise) mus.tenIntro.play();
-            state.bgm = "ten";
-          }
+          active: false,
+          amount: 1,
+          revealed: 0,
+          tens: [],
         },
         eleven: {
           active: false,
@@ -1169,20 +1363,21 @@
           penalty: 0,
           lastPenalty: 1, 
           move: function() {
+            let opened = 0;
+            for (let i = 0; i < state.rows; i++) {
+              if (!state.grid[i]) continue;
+              for (let j = 0; j < state.cols; j++) {
+                if (!state.grid[i][j]) continue;
+                if (!state.grid[i][j].opened) opened++;
+              }
+            }
+            if (opened === 0) {gameOver(); return;}
+            
             let found = false;
             while (!found) {
-              let opened = 0;
-              for (let i = 0; i < state.rows; i++) {
-                if (!state.grid[i]) continue;
-                for (let j = 0; j < state.cols; j++) {
-                  if (!state.grid[i][j]) continue;
-                  if (!state.grid[i][j].opened) opened++;
-                }
-              }
-              if (opened === 0) {gameOver(); return;}
-
               const r = Math.floor(Math.random() * state.rows);
               const c = Math.floor(Math.random() * state.cols);
+              if (!state.grid[r]?.[c]) return;
               const target = state.grid[r][c];
               if (!target.opened && !target.flagged) found = target;
             }
@@ -1190,10 +1385,19 @@
           },
         },
       }
-      
-      canvas.width = 1366;
-      canvas.height = 768;
-      
+
+      let nullCells = [];
+       try {
+        const response = await fetch('cutouts/9beginner.json');
+        if (response.ok) {
+          nullCells = await response.json();
+        } else {
+          console.warn("It appears the rock came before the scissors.");
+        }
+      } catch (err) {
+        console.error("The scissors haven't arrived yet. They have sent you a message though: ", err);
+      }
+
       for (let r = 0; r < state.rows; r++) {
         state.grid[r] = [];
         for (let c = 0; c < state.cols; c++) {
@@ -1214,8 +1418,14 @@
           };
         }
       }
+      nullCells.forEach(c => {
+        if (state.grid[c.row]) state.grid[c.row][c.col] = null;
+      });
+      for (let i=0; i<state.ten.amount; i++) {
+        state.ten.tens[i] = new bossTen();
+      }
       if (!state.suprise && state.boss) {
-        if (state.eleven.active) state.bgm = "one"; // ???
+        if (state.eleven.active) state.bgm = "one";
         else if (state.ten.active) state.bgm = "five";
         else if (state.nine.active) state.bgm = "one";
       } else if (state.suprise && state.boss) {
@@ -1225,16 +1435,39 @@
       } else state.bgm =  randomChoice(["one", "two", "three", "four", "five", "six", "seven", "eight"]);
       if (state.suprise) {
         if (state.nine.active) state.nine.reveal();
-        if (state.ten.active) state.ten.reveal();
+        if (state.ten.active) for (let i=0; i<state.ten.amount; i++) state.ten.tens[i].reveal();
         if (state.eleven.active) state.eleven.reveal();
       } else if (state.boss) {
         mus.zero.play();
       }
       if (state.suprise && state.nine.active && state.ten.active && !state.eleven.active) mus.ten2.play();
       else if (!state.suprise && !state.boss) mus[state.bgm].play();
-      loop();
+      
+      const gridW = state.cols * state.cellSize;
+      const gridH = state.rows * state.cellSize;
+      const availableW = canvas.width - 100;
+      const availableH = canvas.height - 180;
+      const zoomX = availableW / gridW;
+      const zoomY = availableH / gridH;
+
+      state.cam.zoom = Math.min(zoomX, zoomY);
+      state.cam.x = canvas.width / 2 - gridW / 2;
+      state.cam.y = (canvas.height + 100) / 2 - (gridH / 2 + 100);
+      permState.menu = "game";
+    }
+
+    function start() {
+      state = {};
+      permState.menu = "main";
+      canvas.width = 1366;
+      canvas.height = 768;
+      if (!started) loop();
+      started = true;
+      mus.oneMenu.play();
     }
     ctx.font = "72px serif"
     ctx.fillText("Click the canvas to start the game!", 10, canvas.height / 2);
   </script>
 </html>
+
+
