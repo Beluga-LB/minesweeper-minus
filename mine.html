@@ -38,8 +38,11 @@
           [System] Initializing asset preloader...<br>
       </div>
 
-      <button id="skipBtn" onclick="forceStartGame()" style=" padding: 10px 20px; background: #e74c3c; color: white; border: none; font-family: monospace; font-size: 16px; cursor: pointer; border-radius: 4px;">Skip Loading (Errors Detected)</button>
+      <button id="skipBtn" onclick="finishLoading(true)" style=" padding: 10px 20px; background: #e74c3c; color: white; border: none; font-family: monospace; font-size: 16px; cursor: pointer; border-radius: 4px;">Skip Loading (Emergencies Only)</button>
+      <input type="file" id="localGridFolderInput" webkitdirectory directory multiple style="display: none;" onchange="handleLocalGridFolder(event)">
+      <button id="importGridsBtn" onclick="document.getElementById('localGridFolderInput').click()" style="display: none; padding: 10px 20px; background: #27ae60; color: white; border: none; font-family: monospace; font-size: 16px; cursor: pointer; border-radius: 4px; margin-top: 10px;">Import grids folder</button>
     </div>
+    <input type="file" id="localFolderInput" webkitdirectory directory multiple style="display: none;" onchange="handleLocalFolder(event)">
     <canvas id="game" width="1000" height="1000"></canvas>
   </body>
   <script src="helpers.js"></script>
@@ -62,7 +65,6 @@
       nineMove: new Audio('aud/sfx_move.ogg'),
       nineStop: new Audio('aud/sfx_stop.ogg'),
       // tenBounce: new Audio('aud/bounce.ogg'),
-      
 
       tenBounce: new Audio('aud/bounce.ogg'),
       tenBeep: new Audio('aud/beep.ogg'),
@@ -193,9 +195,53 @@
       };
     }
 
-    let totalAssets = Object.keys(img).length + Object.keys(aud).length + Object.keys(mus).length;
+    let loadedGrids = {};
+
+    function getGridAssetList() {
+      let paths = [];
+      const episodes = [1,2]; // add episode 3 later
+      const difficulties = ['beginner', 'novice', 'veteran', 'expert'];
+      
+      for (let ep of episodes) {
+        for (let i = 1; i <= 8 + ep; i++) {
+          for (let diff of difficulties) {
+            paths.push(`grids/ep${ep}/${i}${diff}.json`)
+            if ((i === 10 || i === 11) && diff !== 'beginner') paths.push(`grids/ep${ep}/${i}${diff}2.json`);
+          }
+        }
+      }
+      return paths;
+    }
+    const gridPaths = getGridAssetList();
+
+    let totalAssets = Object.keys(img).length + Object.keys(aud).length + Object.keys(mus).length + gridPaths.length;
     let loadedAssets = 0;
     let hasErrors = false;
+    let gridErrors = false;
+    let localGridFiles = {};
+
+    async function preloadGrids() {
+      for (let path of gridPaths) {
+        try {
+          const response = await fetch(path);
+          if (response.ok) {
+            const data = await response.json();
+            loadedGrids[path] = data;
+            logToConsole(`Loaded grid: ${path}`);
+          } else {
+            logToConsole(`[WARNING] Grid not found: ${path}`, true);
+            gridErrors = true; 
+            hasErrors = true;
+          }
+        } catch (err) {
+          logToConsole(`[ERROR] Failed to load grid: ${path}`, true);
+          hasErrors = true;
+          gridErrors = true;
+        }
+        updateProgress();
+      }
+    }
+    preloadGrids();
 
     function logToConsole(text, isError = false) {
       console.log(text);
@@ -208,23 +254,60 @@
     function updateProgress() {
       loadedAssets++;
       progressText.innerText = `${loadedAssets} / ${totalAssets} Assets Loaded`;
-      if (loadedAssets >= totalAssets) {
-        finishLoading();
-      }
+      if (loadedAssets >= totalAssets) finishLoading(true); // CHANGE TO FALSE!!!
     }
 
     function finishLoading() {
       logToConsole("[System] Starting game...");
+      if (gridErrors) {
+        const importBtn = document.getElementById('importGridsBtn');
+        if (importBtn) importBtn.style.display = 'block';
+        logToConsole("[System] Some assets failed to load.", true);
+        return;
+      }
       setTimeout(() => {
         const overlay = document.getElementById('loaderOverlay');
         if (overlay) overlay.style.display = 'none';
       }, 500);
     }
 
-    function forceStartGame() {
-      const overlay = document.getElementById('loaderOverlay');
-      if (overlay) overlay.style.display = 'none';
-      logToConsole("[System] Force-starting game despite missing assets.");
+    async function handleLocalGridFolder(e) {
+      const files = e.target.files;
+      localGridFiles = {};
+      for (let file of files) {
+        localGridFiles[file.name] = file;
+        localGridFiles[file.webkitRelativePath] = file;
+      }
+      logToConsole(`[System] Processing ${files.length} local files...`);
+
+      let missingGridsCount = 0;
+      for (let path of gridPaths) {
+        if (!loadedGrids[path]) {
+          let fileName = path.split('/').pop();
+          let match = localGridFiles[fileName] || localGridFiles[path] || localGridFiles[`grids/${fileName}`];
+          if (match) {
+            try {
+              const text = await match.text();
+              loadedGrids[path] = JSON.parse(text);
+              logToConsole(`Imported local grid: ${path}`);
+            } catch (err) {
+              logToConsole(`[ERROR] Failed to parse local grid ${path}`, true);
+              missingGridsCount++;
+            }
+          } else {
+            missingGridsCount++;
+          }
+        }
+      }
+
+      if (missingGridsCount === 0) {
+        gridErrors = false;
+        document.getElementById('importGridsBtn').style.display = 'none';
+        logToConsole("[System] All missing grids successfully loaded from folder!");
+        finishLoading();
+      } else {
+        logToConsole(`[System] Still missing ${missingGridsCount} grid JSON files. Please check the folder.`, true);
+      }
     }
 
     let state = {};
@@ -246,56 +329,15 @@
     let loopId;
     let started = false;
 
-    const maps = { // rows, cols, mines
-      beginner: [
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-      ],
-      novice: [
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-      ],
-      advanced: [
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-      ],
-      expert: [
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [13, 19, 48],
-      ],
-    }
-
     const buttons = {
       A: {
         x: 100,
+        y: 128,
+        w: 448,
+        h: 512
+      },
+      B: {
+        x: 700,
         y: 128,
         w: 448,
         h: 512
@@ -332,11 +374,13 @@
       eleven: 10,
     }
 
+    const bgmNumbers = ["zero", "one","one","two","two","three","three","four","four","nine"]
+
     class bossNine {
-      constructor()  {
-        this.active = true;
+      constructor(active, timer)  {
+        this.active = active;
         this.revealed = false;
-        this.timer = 999;
+        this.timer = timer;
         this.timerCD = 60;
         this.row = null;
         this.col = null;
@@ -422,6 +466,7 @@
         }
         if (oob) {
           this.destination = null;
+          this.thinkCD = 0;
         } else {
           if (dir === "left") this.col--;
           else if (dir === "right") this.col++;
@@ -468,7 +513,7 @@
 
     class bossTen {
       constructor() {
-        this.active = true;
+        this.active = false;
         this.revealed = false;
         this.activated = false;
         this.debug = false;
@@ -551,36 +596,14 @@
         return;
       } else if (permState.menu === "main") {
         if (checkCircleRectCollision(permState.mouse, buttons.A)) init();
+        else if (checkCircleRectCollision(permState.mouse, buttons.B)) startAdventure();
         return;
       }
-      if (state.over) return;
-      let overTen = false;
-      let specificTens = [];
-      for (let i=0; i<state.ten?.amount; i++) {
-        if (checkCircleCollision(state.ten.tens[i], state.mouse)) {
-          overTen = true;
-          specificTens.push(i);
-        }
-      }
-      if (state.ten?.revealed >= state.ten?.amount && overTen) {
-        for (let i=0; i<state.ten?.amount; i++) if (specificTens.includes(i)) state.ten.tens[i].click();
-        return;
-      };
-      const sonar = {
-        x: canvas.width / 2 - 100,
-        y: 0,
-        w: 50,
-        h: 100
-      }
-      if (checkCircleRectCollision(state.mouse, sonar)) state.useSonar();
+      
       const c = Math.floor(state.mouse.zoomX / state.cellSize);
       const r = Math.floor((state.mouse.zoomY - 100) / state.cellSize);
       const cell = state.grid[r]?.[c];
       if (!cell) return;
-      if (state.nine.cell(cell)) {
-        state.nine.click();
-        return;
-      };
 
       if (!state.clicked) {
         if (state.nine.active && !state.nine.revealed) {
@@ -597,6 +620,27 @@
         } /*else if (state.eleven.active && !state.eleven.revealed) {
 
         } */else placeMines(cell)
+      }
+
+      if (state.over) return;
+      let overTen = false;
+      let specificTen;
+      for (let i=0; i<state.ten?.amount; i++) {
+        if (checkCircleCollision(state.ten.tens[i], state.mouse)) {
+          state.ten.tens[i].click();
+          return;
+        }
+      }
+      const sonar = {
+        x: canvas.width / 2 - 100,
+        y: 0,
+        w: 50,
+        h: 100
+      }
+      if (checkCircleRectCollision(state.mouse, sonar)) state.useSonar();
+      if (state.nine.cell(cell)) {
+        state.nine.click();
+        return;
       };
       cell.open();
       draw();
@@ -774,6 +818,10 @@
           if (state.lost && cell.mine && !cell.flagged) cell.opened = true;
         }
       }
+
+      if (permState.mode === "adv") {
+        permState.stage++;
+      }
     }
 
     function cellValue(cell, flags = false, anti = false) {
@@ -867,6 +915,7 @@
           }
         }
         ctx.drawImage(img.ButtonA, buttons.A.x, buttons.A.y, buttons.A.w, buttons.A.h)
+        ctx.drawImage(img.ButtonB, buttons.B.x, buttons.B.y, buttons.B.w, buttons.B.h)
         return;
       }
       ctx.save();
@@ -1229,11 +1278,14 @@
       loopId = requestAnimationFrame(loop);
     }
 
-    async function init() {
+    function init() {
       for (let i in mus) {
         mus[i].pause();
         mus[i].currentTime = 0; 
       } 
+
+      const grid = loadedGrids[`grids/ep${permState.episode}/${permState.stage}${permState.diff}.json`]; // add variants (10 phase 2) later
+
       state = { 
         get mouse() {return permState.mouse},
         set mouse(val) {permState.mouse = val},
@@ -1244,12 +1296,12 @@
           speed: 10,
         },
         grid: [],
-        cols: 13,
-        rows: 13,
+        cols: grid.cols,
+        rows: grid.rows,
         get cellSize() {
           return Math.max(40, Math.floor(1200 / this.cols))
         },
-        mines: 29,
+        mines: grid.mines,
         antiProb: 0,
         doubleProb: 0,
         get flags() {
@@ -1320,7 +1372,7 @@
 
         get stage() {return permState.stage},
         set stage(val) {permState.stage = val;},
-        bgm: "one",
+        bgm: bgmNumbers[permState.stage],
         clicked: false,
         fails: 0,
         won: false,
@@ -1347,10 +1399,10 @@
           return this.nine.revealed || this.ten.revealed || this.eleven.revealed
         },
         suprise: false,
-        nine: new bossNine(),
+        nine: new bossNine(permState.stage === 9 ? true : false, grid.timer),
         ten: {
           active: false,
-          amount: 1,
+          amount: 0,
           revealed: 0,
           tens: [],
         },
@@ -1386,16 +1438,10 @@
         },
       }
 
-      let nullCells = [];
-       try {
-        const response = await fetch('cutouts/9beginner.json');
-        if (response.ok) {
-          nullCells = await response.json();
-        } else {
-          console.warn("It appears the rock came before the scissors.");
-        }
-      } catch (err) {
-        console.error("The scissors haven't arrived yet. They have sent you a message though: ", err);
+      if (grid.cutout) {
+        grid.cutout.forEach(c => {
+          if (state.grid[c.row]) state.grid[c.row][c.col] = null;
+        });
       }
 
       for (let r = 0; r < state.rows; r++) {
@@ -1418,9 +1464,6 @@
           };
         }
       }
-      nullCells.forEach(c => {
-        if (state.grid[c.row]) state.grid[c.row][c.col] = null;
-      });
       for (let i=0; i<state.ten.amount; i++) {
         state.ten.tens[i] = new bossTen();
       }
@@ -1432,7 +1475,7 @@
         if (state.eleven.active) state.bgm = "eleven";
         else if (state.ten.active) state.bgm = "ten";
         else if (state.nine.active) state.bgm = "nine";
-      } else state.bgm =  randomChoice(["one", "two", "three", "four", "five", "six", "seven", "eight"]);
+      } // else state.bgm =  randomChoice(["one", "two", "three", "four", "five", "six", "seven", "eight"]);
       if (state.suprise) {
         if (state.nine.active) state.nine.reveal();
         if (state.ten.active) for (let i=0; i<state.ten.amount; i++) state.ten.tens[i].reveal();
@@ -1464,6 +1507,14 @@
       if (!started) loop();
       started = true;
       mus.oneMenu.play();
+    }
+
+    function startAdventure(ep) {
+      permState.mode = "adv";
+      permState.episode = 1;
+      permState.stage = 1;
+      permState.diff = "expert";
+      init();
     }
     ctx.font = "72px serif"
     ctx.fillText("Click the canvas to start the game!", 10, canvas.height / 2);
