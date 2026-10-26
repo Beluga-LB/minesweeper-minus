@@ -24,8 +24,10 @@
     }
     .controls {
       display: flex;
-      gap: 15px;
+      gap: 12px;
       align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
       margin-bottom: 20px;
       background: #2a2a2a;
       padding: 12px 20px;
@@ -49,7 +51,7 @@
       background: #007acc;
       color: white;
       border: none;
-      padding: 8px 16px;
+      padding: 8px 14px;
       cursor: pointer;
       border-radius: 4px;
       font-weight: bold;
@@ -63,6 +65,34 @@
     .btn-copy:hover {
       background: #1e8449;
     }
+    .btn-invert {
+      background: #e67e22;
+    }
+    .btn-invert:hover {
+      background: #d35400;
+    }
+    .btn-center {
+      background: #8e44ad;
+    }
+    .btn-center:hover {
+      background: #71368a;
+    }
+    .btn-import {
+      background: #2980b9;
+    }
+    .btn-import:hover {
+      background: #1f618d;
+    }
+    .grid-wrapper {
+      position: relative;
+      display: inline-block;
+      max-width: 90vw;
+      max-height: 60vh;
+      overflow: auto;
+      background: #151515;
+      padding: 4px;
+      border-radius: 4px;
+    }
     .grid-container {
       display: grid;
       gap: 2px;
@@ -70,9 +100,7 @@
       padding: 4px;
       border-radius: 4px;
       user-select: none;
-      max-width: 90vw;
-      max-height: 60vh;
-      overflow: auto;
+      position: relative;
     }
     .cell {
       width: 32px;
@@ -84,11 +112,19 @@
       justify-content: center;
       font-size: 10px;
       cursor: pointer;
+      position: relative;
     }
     .cell.null-tile {
       background: #222;
       border-color: #111;
       color: #555;
+    }
+    /* Center lines on cells */
+    .cell.center-v {
+      border-right: 2px solid #ff00ff !important;
+    }
+    .cell.center-h {
+      border-bottom: 2px solid #ff00ff !important;
     }
     .output-box {
       width: 100%;
@@ -117,10 +153,16 @@
     <label>Rows: <input type="number" id="rowsInput" value="16" min="1" max="50"></label>
     <label>Cols: <input type="number" id="colsInput" value="16" min="1" max="50"></label>
     <button onclick="generateGrid()">Reset Board</button>
+    <button class="btn-invert" onclick="invertCutouts()">Invert Cutouts</button>
+    <button class="btn-center" onclick="toggleCenterLines()">Toggle Center Lines</button>
+    <button class="btn-import" onclick="document.getElementById('importFileInput').click()">Import JSON</button>
     <button class="btn-copy" onclick="copyNullCoords()">Copy Null Coords</button>
+    <input type="file" id="importFileInput" accept=".json" style="display: none;" onchange="importGridJSON(event)">
   </div>
 
-  <div id="grid" class="grid-container"></div>
+  <div class="grid-wrapper">
+    <div id="grid" class="grid-container"></div>
+  </div>
 
   <div class="output-box">
     <label style="margin-bottom: 6px; display: block;">Null Cell Coordinates:</label>
@@ -132,17 +174,32 @@
     let cols = 16;
     let isMouseDown = false;
     let toggleTargetState = false; // true = make null, false = make active
+    let showCenterLines = false;
 
     document.addEventListener('mousedown', () => isMouseDown = true);
     document.addEventListener('mouseup', () => isMouseDown = false);
 
-    function generateGrid() {
-      rows = parseInt(document.getElementById('rowsInput').value);
-      cols = parseInt(document.getElementById('colsInput').value);
+    function generateGrid(cutoutCoords = null) {
+      if (!cutoutCoords) {
+        rows = parseInt(document.getElementById('rowsInput').value);
+        cols = parseInt(document.getElementById('colsInput').value);
+      } else {
+        document.getElementById('rowsInput').value = rows;
+        document.getElementById('colsInput').value = cols;
+      }
       
       const gridContainer = document.getElementById('grid');
       gridContainer.innerHTML = '';
       gridContainer.style.gridTemplateColumns = `repeat(${cols}, 32px)`;
+
+      // Map cutout set if array passed
+      const cutoutSet = new Set();
+      if (Array.isArray(cutoutCoords)) {
+        cutoutCoords.forEach(c => cutoutSet.add(`${c.row},${c.col}`));
+      }
+
+      const midRow = Math.floor((rows - 1) / 2);
+      const midCol = Math.floor((cols - 1) / 2);
 
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -150,6 +207,15 @@
           cell.className = 'cell';
           cell.dataset.row = r;
           cell.dataset.col = c;
+
+          if (cutoutSet.has(`${r},${c}`)) {
+            cell.classList.add('null-tile');
+          }
+
+          if (showCenterLines) {
+            if (c === midCol) cell.classList.add('center-v');
+            if (r === midRow) cell.classList.add('center-h');
+          }
           
           cell.addEventListener('mousedown', (e) => {
             e.preventDefault();
@@ -190,6 +256,55 @@
     function updateOutput() {
       const coords = getNullCoords();
       document.getElementById('output').value = JSON.stringify(coords, null, 2);
+    }
+
+    function invertCutouts() {
+      const cells = document.querySelectorAll('.cell');
+      cells.forEach(cell => {
+        cell.classList.toggle('null-tile');
+      });
+      updateOutput();
+    }
+
+    function toggleCenterLines() {
+      showCenterLines = !showCenterLines;
+      const currentNulls = getNullCoords();
+      generateGrid(currentNulls);
+    }
+
+    async function importGridJSON(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        let cutoutArray = [];
+
+        // Check if it's a full grid object or just a cutout array
+        if (data.rows && data.cols) {
+          rows = data.rows;
+          cols = data.cols;
+          cutoutArray = data.cutout || [];
+        } else if (Array.isArray(data)) {
+          cutoutArray = data;
+          // Infer max rows and cols if possible
+          let maxR = 0, maxC = 0;
+          cutoutArray.forEach(c => {
+            if (c.row > maxR) maxR = c.row;
+            if (c.col > maxC) maxC = c.col;
+          });
+          rows = Math.max(rows, maxR + 1);
+          cols = Math.max(cols, maxC + 1);
+        }
+
+        generateGrid(cutoutArray);
+        alert(`Successfully imported "${file.name}"!`);
+      } catch (err) {
+        alert("Failed to parse JSON file: " + err.message);
+      }
+      e.target.value = ''; // Reset input
     }
 
     function copyNullCoords() {

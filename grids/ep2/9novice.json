@@ -2,6 +2,7 @@
   "rows": 17,
   "cols": 17,
   "mines": 47,
+  "timer": 219,
   "cutout": [
   {
     "row": 4,

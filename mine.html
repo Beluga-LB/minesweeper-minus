@@ -2,7 +2,7 @@
 <html>
   <head>
     <!--<base href="https://cdn.jsdelivr.net/gh/Beluga-LB/minesweeper-minus@main/">-->
-    <base href="https://raw.githubusercontent.com/Beluga-LB/minesweeper-minus/main/">
+    <!--<base href="https://raw.githubusercontent.com/Beluga-LB/minesweeper-minus/main/">-->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
@@ -16,15 +16,17 @@
       justify-content: center;
       margin: 0;
       padding: 0;
-      width: 100%;
-      height: 100%;
+      width: 100vw;
+      height: 100vh;
+      background: #000; /* Optional: fills the letterbox gaps with black */
+      overflow: hidden;
     }
 
     canvas {
       width: auto;
-      height: auto;   
-      max-width: 100%; 
-      max-height: 100%; 
+      height: auto;
+      max-width: 100%;
+      max-height: 100%;
       image-rendering: pixelated;
     }
     </style>
@@ -45,226 +47,228 @@
     <input type="file" id="localFolderInput" webkitdirectory directory multiple style="display: none;" onchange="handleLocalFolder(event)">
     <canvas id="game" width="1000" height="1000"></canvas>
   </body>
-  <script>// Global
-const blue = "#5BA7F4"
-const green = "#3DD462"
-const red = "#FF0000"
-const worse_blue = "#3498DB"
-const charcoal = "#000000"
-const pantone = "#4A412A"
-const crimson = "#DC143C"
-const emerald = "#50C878"
-const amethyst = "#9966CC"
-const blush = "#DE5D83"
-const coral = "#FF7F50"
-const indigo = "#4B0082"
-const bronze = "#CD7F32"
-const silver = "#C0C0C0"
-const gold = "#FFD700"
+  <script>
+    // Global
+    const blue = "#5BA7F4"
+    const green = "#3DD462"
+    const red = "#FF0000"
+    const worse_blue = "#3498DB"
+    const charcoal = "#000000"
+    const pantone = "#4A412A"
+    const crimson = "#DC143C"
+    const emerald = "#50C878"
+    const amethyst = "#9966CC"
+    const blush = "#DE5D83"
+    const coral = "#FF7F50"
+    const indigo = "#4B0082"
+    const bronze = "#CD7F32"
+    const silver = "#C0C0C0"
+    const gold = "#FFD700"
 
-function invert(color) {
-    const invertHexComponent = (hex) => {
-        const inverted = 255 - parseInt(hex, 16);
-        return inverted.toString(16).padStart(2, '0');
-    };
+    function invert(color) {
+        const invertHexComponent = (hex) => {
+            const inverted = 255 - parseInt(hex, 16);
+            return inverted.toString(16).padStart(2, '0');
+        };
 
-    color = color.trim();
+        color = color.trim();
 
-    if (color.toLowerCase().includes('rgb') || color.includes(',')) {
-        const rgbMatch = color.match(/\d+/g);
-        if (!rgbMatch || rgbMatch.length < 3) throw new Error("Invalid RGB format");
+        if (color.toLowerCase().includes('rgb') || color.includes(',')) {
+            const rgbMatch = color.match(/\d+/g);
+            if (!rgbMatch || rgbMatch.length < 3) throw new Error("Invalid RGB format");
+            
+            const r = 255 - parseInt(rgbMatch[0], 10);
+            const g = 255 - parseInt(rgbMatch[1], 10);
+            const b = 255 - parseInt(rgbMatch[2], 10);
+            
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        let hex = color.replace('#', '');
+
+        if (hex.length === 3) {
+            hex = hex.split('').map(char => char + char).join('');
+        }
+
+        if (hex.length !== 6) throw new Error("Invalid HEX format");
+
+        const r = invertHexComponent(hex.slice(0, 2));
+        const g = invertHexComponent(hex.slice(2, 4));
+        const b = invertHexComponent(hex.slice(4, 6));
+
+        return `#${r}${g}${b}`;
+    }
+
+
+    function circle(x, y, r, c, s = null, f = 2) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      
+      if (c) {
+        ctx.fillStyle = c;
+        ctx.fill();
+      }
+
+      if (s) {
+        ctx.strokeStyle = s;
+        ctx.lineWidth = f;
+        ctx.stroke();
+      }
+    }
+
+    function rect(x, y, w, h, c, s = null, f = 2) {
+      if (c) {
+        ctx.fillStyle = c;
+        ctx.fillRect(x, y, w, h);
+      }
+
+      if (s) {
+        ctx.strokeStyle = s;
+        ctx.lineWidth = f;
+        ctx.strokeRect(x, y, w, h);
+      }
+    }
+
+    function circle2(x, y, r, c, s = null, f = 2) {
+      ctx2.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      
+      if (c) {
+        ctx2.fillStyle = c;
+        ctx2.fill();
+      }
+
+      if (s) {
+        ctx2.strokeStyle = s;
+        ctx2.lineWidth = f;
+        ctx2.stroke();
+      }
+    }
+
+    function rect2(x, y, w, h, c, s = null, f = 2) {
+      if (c) {
+        ctx2.fillStyle = c;
+        ctx2.fillRect(x, y, w, h);
+      }
+
+      if (s) {
+        ctx2.strokeStyle = s;
+        ctx2.lineWidth = f;
+        ctx2.strokeRect(x, y, w, h);
+      }
+    }
+
+    function text(t, x, y, c, size, family, align, baseline, sc, sw = 3, weight) {
+      ctx.textAlign = align ? align : "left";
+      ctx.textBaseline = baseline ? baseline : "alphabetic";
+      ctx.font = `${weight ? weight : ""} ${size}px ${family ? family : "serif"}`;
+      
+      if (sc) {
+        ctx.strokeStyle = sc;
+        ctx.lineWidth = sw;
+        ctx.strokeText(t, x, y);
+      }
+      
+      if (c) {
+        ctx.fillStyle = c;
+        ctx.fillText(t, x, y);
+      }
+    }
+
+    // Angles & Distance
+
+    function getDistance(entity1, entity2) {
+        const dx = entity2.x - entity1.x;
+        const dy = entity2.y - entity1.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function moveToward(follower, target, speed) {
+        const dx = target.x - follower.x;
+        const dy = target.y - follower.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
         
-        const r = 255 - parseInt(rgbMatch[0], 10);
-        const g = 255 - parseInt(rgbMatch[1], 10);
-        const b = 255 - parseInt(rgbMatch[2], 10);
+        if (distance > speed) {
+            follower.x += (dx / distance) * speed;
+            follower.y += (dy / distance) * speed;
+        } else {
+            follower.x = target.x;
+            follower.y = target.y;
+        }
+    }
+
+    function moveAtAngle(entity, angle, speed) {
+        entity.x += Math.cos(angle) * speed;
+        entity.y += Math.sin(angle) * speed;
+    }
+
+    function checkCircleCollision(c1, c2) {
+        const dx = c1.x - c2.x;
+        const dy = c1.y - c2.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
         
-        return `rgb(${r}, ${g}, ${b})`;
+        return distance < (c1.r + c2.r);
     }
 
-    let hex = color.replace('#', '');
-
-    if (hex.length === 3) {
-        hex = hex.split('').map(char => char + char).join('');
+    function checkRectCollision(r1, r2) {
+        return r1.x < r2.x + r2.w &&
+              r1.x + r1.w > r2.x &&
+              r1.y < r2.y + r2.h &&
+              r1.y + r1.h > r2.y;
     }
 
-    if (hex.length !== 6) throw new Error("Invalid HEX format");
+    function checkCircleRectCollision(circle, rect) {
+        const closestX = Math.max(rect.x, Math.min(circle.x, rect.x + rect.w));
+        const closestY = Math.max(rect.y, Math.min(circle.y, rect.y + rect.h));
 
-    const r = invertHexComponent(hex.slice(0, 2));
-    const g = invertHexComponent(hex.slice(2, 4));
-    const b = invertHexComponent(hex.slice(4, 6));
+        const dx = circle.x - closestX;
+        const dy = circle.y - closestY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
 
-    return `#${r}${g}${b}`;
-}
-
-
-function circle(x, y, r, c, s = null, f = 2) {
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  
-  if (c) {
-    ctx.fillStyle = c;
-    ctx.fill();
-  }
-
-  if (s) {
-    ctx.strokeStyle = s;
-    ctx.lineWidth = f;
-    ctx.stroke();
-  }
-}
-
-function rect(x, y, w, h, c, s = null, f = 2) {
-  if (c) {
-    ctx.fillStyle = c;
-    ctx.fillRect(x, y, w, h);
-  }
-
-  if (s) {
-    ctx.strokeStyle = s;
-    ctx.lineWidth = f;
-    ctx.strokeRect(x, y, w, h);
-  }
-}
-
-function circle2(x, y, r, c, s = null, f = 2) {
-  ctx2.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  
-  if (c) {
-    ctx2.fillStyle = c;
-    ctx2.fill();
-  }
-
-  if (s) {
-    ctx2.strokeStyle = s;
-    ctx2.lineWidth = f;
-    ctx2.stroke();
-  }
-}
-
-function rect2(x, y, w, h, c, s = null, f = 2) {
-  if (c) {
-    ctx2.fillStyle = c;
-    ctx2.fillRect(x, y, w, h);
-  }
-
-  if (s) {
-    ctx2.strokeStyle = s;
-    ctx2.lineWidth = f;
-    ctx2.strokeRect(x, y, w, h);
-  }
-}
-
-function text(t, x, y, c, size, family, align, baseline, sc, sw = 3, weight) {
-  ctx.textAlign = align ? align : "left";
-  ctx.textBaseline = baseline ? baseline : "alphabetic";
-  ctx.font = `${weight ? weight : ""} ${size}px ${family ? family : "serif"}`;
-  
-  if (sc) {
-    ctx.strokeStyle = sc;
-    ctx.lineWidth = sw;
-    ctx.strokeText(t, x, y);
-  }
-  
-  if (c) {
-    ctx.fillStyle = c;
-    ctx.fillText(t, x, y);
-  }
-}
-
-// Angles & Distance
-
-function getDistance(entity1, entity2) {
-    const dx = entity2.x - entity1.x;
-    const dy = entity2.y - entity1.y;
-    return Math.sqrt(dx * dx + dy * dy);
-}
-
-function moveToward(follower, target, speed) {
-    const dx = target.x - follower.x;
-    const dy = target.y - follower.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    if (distance > speed) {
-        follower.x += (dx / distance) * speed;
-        follower.y += (dy / distance) * speed;
-    } else {
-        follower.x = target.x;
-        follower.y = target.y;
+        return distance < circle.r;
     }
-}
 
-function moveAtAngle(entity, angle, speed) {
-    entity.x += Math.cos(angle) * speed;
-    entity.y += Math.sin(angle) * speed;
-}
+    function randomNumber(min, max, int = false) {
+        if (int) return Math.floor(Math.random() * (max - min + 1)) + min;
+        return Math.random() * (max - min) + min;
+    }
 
-function checkCircleCollision(c1, c2) {
-    const dx = c1.x - c2.x;
-    const dy = c1.y - c2.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    return distance < (c1.r + c2.r);
-}
+    // arr should be an array (e.g. [blue, red, green])
+    function randomChoice(arr) {
+        return arr[Math.floor(Math.random() * arr.length)];
+    }
 
-function checkRectCollision(r1, r2) {
-    return r1.x < r2.x + r2.w &&
-           r1.x + r1.w > r2.x &&
-           r1.y < r2.y + r2.h &&
-           r1.y + r1.h > r2.y;
-}
+    function clamp(val, min, max) {
+        return Math.max(min, Math.min(max, val));
+    }
 
-function checkCircleRectCollision(circle, rect) {
-    const closestX = Math.max(rect.x, Math.min(circle.x, rect.x + rect.w));
-    const closestY = Math.max(rect.y, Math.min(circle.y, rect.y + rect.h));
+    function getAngle(entity1, entity2) {
+        return Math.atan2(entity2.y - entity1.y, entity2.x - entity1.x);
+    }
 
-    const dx = circle.x - closestX;
-    const dy = circle.y - closestY;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    // Conversions
 
-    return distance < circle.r;
-}
+    function degToRad(degrees) {
+        return degrees * (Math.PI / 180);
+    }
 
-function randomNumber(min, max, int = false) {
-    if (int) return Math.floor(Math.random() * (max - min + 1)) + min;
-    return Math.random() * (max - min) + min;
-}
+    function radToDeg(radians) {
+        return radians * (180 / Math.PI);
+    }
 
-// arr should be an array (e.g. [blue, red, green])
-function randomChoice(arr) {
-    return arr[Math.floor(Math.random() * arr.length)];
-}
+    function hexToRGBA(hex, alpha = 0) {
+        hex = hex.replace('#', '');
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
 
-function clamp(val, min, max) {
-    return Math.max(min, Math.min(max, val));
-}
-
-function getAngle(entity1, entity2) {
-    return Math.atan2(entity2.y - entity1.y, entity2.x - entity1.x);
-}
-
-// Conversions
-
-function degToRad(degrees) {
-    return degrees * (Math.PI / 180);
-}
-
-function radToDeg(radians) {
-    return radians * (180 / Math.PI);
-}
-
-function hexToRGBA(hex, alpha = 0) {
-    hex = hex.replace('#', '');
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-    
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function toggle(boo) {
-  return !boo;
-}</script>
+    function toggle(boo) {
+      return !boo;
+    }
+  </script>
   <script>
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
@@ -338,7 +342,7 @@ function toggle(boo) {
       aud[i].oncanplaythrough = () => {
         logToConsole(`Loaded audio: ${i}`);
         updateProgress();
-        aud[i].oncanplaythrough = null; // Prevent multi-firing
+        aud[i].oncanplaythrough = null;
       };
       aud[i].onerror = () => {
         hasErrors = true;
@@ -383,13 +387,23 @@ function toggle(boo) {
       ButtonB: new Image(),
       ButtonC: new Image(),
       ButtonD: new Image(),
+
       mineCounter1: new Image(),
       mineCounter2: new Image(),
       clock1: new Image(),
       clock2: new Image(),
+      coin: new Image(),
+      radar: new Image(),
+      off_on: new Image(),
+      healthmeter: new Image(),
+      shield: new Image(),
+      Panel: new Image(),
+      Panel2: new Image(),
+
       tenBody: new Image(),
       tenPiston: new Image(),
       flags: new Image(),
+      redX: new Image(),
       Numbers: new Image(),
       NumbersNegative: new Image(),
       nine: new Image(),
@@ -473,12 +487,12 @@ function toggle(boo) {
     function updateProgress() {
       loadedAssets++;
       progressText.innerText = `${loadedAssets} / ${totalAssets} Assets Loaded`;
-      if (loadedAssets >= totalAssets) finishLoading(true); // CHANGE TO FALSE!!!
+      if (loadedAssets >= totalAssets) finishLoading();
     }
 
-    function finishLoading() {
+    function finishLoading(bypass = false) {
       logToConsole("[System] Starting game...");
-      if (gridErrors) {
+      if (gridErrors && !bypass) {
         const importBtn = document.getElementById('importGridsBtn');
         if (importBtn) importBtn.style.display = 'block';
         logToConsole("[System] Some assets failed to load.", true);
@@ -530,6 +544,12 @@ function toggle(boo) {
     }
 
     let state = {};
+    let settings = {
+      undermine: false,
+      chording: true,
+      firstClick: 3, // 3, 1, or 0
+
+    }
     let permState = {
       mouse: {
         x: 0,
@@ -592,6 +612,13 @@ function toggle(boo) {
       nine: 4,
       ten: 9,
       eleven: 10,
+    }
+
+    const bgmAlt = {
+      one: "five",
+      two: "six",
+      three: "seven",
+      four: "eight",
     }
 
     const bgmNumbers = ["zero", "one","one","two","two","three","three","four","four","nine"]
@@ -714,6 +741,7 @@ function toggle(boo) {
       reveal(cell) {
         this.row = cell ? cell.row : Math.floor(state.rows / 2);
         this.col = cell ? cell.col : Math.floor(state.cols / 2);
+
         this.revealed = true; 
         for (let i = this.row - 1; i <= this.row + 1; i++) {
           if (!state.grid[i]) continue;
@@ -754,8 +782,11 @@ function toggle(boo) {
       };
       reveal(cell) {
         if (!cell) return;
-        this.x = cell.col * state.cellSize + state.cellSize / 2;
-        this.y = cell.row * state.cellSize + state.cellSize / 2 + 100;
+        const worldX = cell.col * state.cellSize + state.cellSize / 2;
+        const worldY = cell.row * state.cellSize + state.cellSize / 2 + 100;
+        this.x = (worldX + state.cam.x - canvas.width / 2) * state.cam.zoom + canvas.width / 2;
+        this.y = (worldY + state.cam.y - canvas.height / 2) * state.cam.zoom + canvas.height / 2;
+
         this.revealed = true;
         state.ten.revealed++;
         for (let i in mus) {
@@ -815,6 +846,20 @@ function toggle(boo) {
         else if (checkCircleRectCollision(permState.mouse, buttons.B)) startAdventure();
         return;
       }
+
+      if (state.over) {nextStage(); return};
+
+      for (let i=0; i<state.ten?.amount; i++) {
+        if (checkCircleCollision(state.ten.tens[i], state.mouse)) {
+          state.ten.tens[i].click();
+          return;
+        }
+      }
+
+      if (state.mouse.y < 100) {
+        if (checkCircleRectCollision(state.mouse, {x: canvas.width / 2 - 100, y: 0 ,w: 50, h: 100})) state.useSonar();
+      }
+      
       
       const c = Math.floor(state.mouse.zoomX / state.cellSize);
       const r = Math.floor((state.mouse.zoomY - 100) / state.cellSize);
@@ -838,22 +883,6 @@ function toggle(boo) {
         } */else placeMines(cell)
       }
 
-      if (state.over) {nextStage(); return};
-      let overTen = false;
-      let specificTen;
-      for (let i=0; i<state.ten?.amount; i++) {
-        if (checkCircleCollision(state.ten.tens[i], state.mouse)) {
-          state.ten.tens[i].click();
-          return;
-        }
-      }
-      const sonar = {
-        x: canvas.width / 2 - 100,
-        y: 0,
-        w: 50,
-        h: 100
-      }
-      if (checkCircleRectCollision(state.mouse, sonar)) state.useSonar();
       if (state.nine.cell(cell) && state.clicked) {
         state.nine.click();
         return;
@@ -865,19 +894,13 @@ function toggle(boo) {
     canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       if (state.over || !started || permState.menu !== "game") return;
-
-      let overTen = false;
-      let specificTens = [];
       for (let i=0; i<state.ten?.amount; i++) {
         if (checkCircleCollision(state.ten.tens[i], state.mouse)) {
-          overTen = true;
-          specificTens.push(i);
+          state.ten.tens[i].click();
+          return;
         }
       }
-      if (state.ten?.revealed >= state.ten?.amount && overTen) {
-        for (let i=0; i<state.ten?.amount; i++) if (specificTens.includes(i)) state.ten.tens[i].click();
-        return;
-      };
+      
       const c = Math.floor(state.mouse.zoomX / state.cellSize);
       const r = Math.floor((state.mouse.zoomY - 100) / state.cellSize);
       const cell = state.grid[r]?.[c];
@@ -917,7 +940,7 @@ function toggle(boo) {
       if (!cell) return;
       if (cell.flagged || (comeFromChord && cell.opened)) return;
       if (cell.opened) {
-        if (state.chording && !comeFromSpread) chordCell(cell, comeFromSpread);
+        if (settings.chording && !comeFromSpread) chordCell(cell, comeFromSpread);
         return;
       };
       
@@ -936,6 +959,7 @@ function toggle(boo) {
         cell.flagged = cell.mine;
         cell.hit = cell.mine;
         if (state.boss) state.fails++;
+        else if (permState.shields) permState.shields--;
         else state.lives--;
         play("mine")
         state.shake += 30;
@@ -1018,7 +1042,7 @@ function toggle(boo) {
       if (state.over) return;
       if (win) state.won = true;
       else state.lost = true;
-      if (state.ten.active) for (let i=0; i<state.ten.amount; i++) state.ten.time = win ? 10 : 0;
+      if (state.ten.active) for (let i=0; i<state.ten.amount; i++) state.ten.tens[i].time = win ? 10 : 0;
       for (let i in mus) {
         mus[i].pause();
         mus[i].currentTime = 0; 
@@ -1037,12 +1061,7 @@ function toggle(boo) {
       }
 
       if (permState.mode === "adv") {
-        if (state.lost) {
-          if (permState.continues === 0) permState.coins -= state.boss ? 10 : 100;
-          else permState.coins -= permState.continues * (state.boss ? 20 : 200)
-          permState.lives = 3;
-          permState.continues++;
-        } else {
+        if (!state.lost) {
           permState.stage++;
           permState.coins += 100;
         }
@@ -1067,10 +1086,10 @@ function toggle(boo) {
       const c = cell.col;
       let count = 0;
       for (let i = r - 1; i <= r + 1; i++) {
-        if (i < 0 || i >= state.rows) continue;
+        if (!state.grid[i]) continue;
         for (let j = c - 1; j <= c + 1; j++) {
           const neighbor = state.grid[i][j];
-          if (!neighbor || j < 0 || j >= state.cols || neighbor === cell) continue;
+          if (!neighbor || neighbor === cell || (settings.undermine && neighbor.hit)) continue;
           if (anti) {
             if (neighbor.mine && !flags) count += Math.abs(neighbor.mine);
             else if (neighbor.flagged && flags) count += Math.abs(neighbor.flagged);
@@ -1095,16 +1114,22 @@ function toggle(boo) {
       }
          
       let m = state.nine.active ? 8 : 0;
+      let stageCell = null;
       
       if (permState.mode === "adv" && permState.stage >= 1 && permState.stage <= 8) { 
         const targetNumber = permState.stage;
-        
-        const r = 1 + Math.floor(Math.random() * (state.rows - 2));
-        const c = 1 + Math.floor(Math.random() * (state.cols - 2));
-        const stageTile = state.grid[r]?.[c];
-        
-        if (stageTile) {
+        let success = false;
+        let attempts = 0;
+
+        while (!success && attempts < 100) {
+          attempts++;
+          const r = Math.floor(Math.random() * (state.rows));
+          const c = Math.floor(Math.random() * (state.cols));
+          const stageTile = state.grid[r]?.[c];
+          if (!stageTile) continue;
+          
           stageTile.mine = false;
+          stageCell = stageTile;
           
           let neighbors = [];
           for (let i = r - 1; i <= r + 1; i++) {
@@ -1118,15 +1143,15 @@ function toggle(boo) {
           }
           
           neighbors.sort(() => Math.random() - 0.5);
+          if (neighbors.length < targetNumber) continue;
+          else success = true;
           
           let placedCount = 0;
           for (let neighbor of neighbors) {
             if (placedCount < targetNumber) {
-              if (!neighbor.mine) {
-                neighbor.mine = 1;
-                m++;
-                placedCount++;
-              } else break;
+              neighbor.mine = 1;
+              m++;
+              placedCount++;
             }
           }
         }
@@ -1137,11 +1162,12 @@ function toggle(boo) {
         const c = Math.floor(Math.random() * state.cols);
         const mine = state.grid[r]?.[c];
         if (!mine) continue;
-        let near = cell ? Math.abs(r - cell.row) <= 1 && Math.abs(c - cell.col) <= 1 : false;
-        if (cell) {
-          if ((state.rows <= 3 && state.cols <= 3) || state.firstClick === 1) near = r === cell.row && c === cell.col
-          if (state.rows * state.cols <= state.mines || state.firstClick === 0) near = false;
-        }
+
+        let near = Math.abs(r - cell.row) <= 1 && Math.abs(c - cell.col) <= 1;
+        if ((state.rows <= 3 && state.cols <= 3) || settings.firstClick === 1) near = r === cell.row && c === cell.col
+        if (state.rows * state.cols <= state.mines || settings.firstClick === 0) near = false;
+        if (stageCell && Math.abs(r - stageCell.row) <= 1 && Math.abs(c - stageCell.col) <= 1) near = true;
+
         if (!mine.mine && !near) {
           mine.mine = Math.random() < state.doubleProb ? 2 : 1;
           if (Math.random() < state.antiProb) mine.mine = -mine.mine;
@@ -1345,18 +1371,38 @@ function toggle(boo) {
       ctx.translate(0,-100);
       ctx.restore();
       rect(0,0,canvas.width, 100, silver, charcoal)
-      rect(canvas.width / 2 - 50, 0, 100, 100, gold, charcoal);
-      rect(canvas.width / 2 - 100, 0, 50, 100, state.sonar ? emerald : charcoal, charcoal);
-      rect(canvas.width / 2 + 50, 0, 50, 100, state.livesColor(state.lives, 3), charcoal);
+      ctx.drawImage(img.Panel2, canvas.width / 2 - 100, 0, 200, 100)
+      ctx.drawImage(
+        img.radar,
+        64 * (Math.floor(state.sonarClock / 7) % 8), 0, 64, 64,
+        canvas.width / 2 - 88, 32, 36, 36
+      )
+      if (state.nine.active) ctx.globalAlpha = 0.5;
+      ctx.drawImage(
+        img.off_on,
+        state.sonar ? 64 : 0, 0, 64, 32,
+        canvas.width / 2 - 88, 72, 36, 18
+      )
+      ctx.globalAlpha = 1.0;
+      ctx.drawImage(img.coin, canvas.width / 2 - 88, 14, 10, 10)
+      text(Math.min(9999, state.coins), canvas.width / 2 - 50, 20, "#FFF", 12, "monospace", "right", "middle")
+
+      ctx.drawImage(
+        img.healthmeter,
+        64 * (3 - state.lives), 0, 64, 64,
+        canvas.width / 2 + 54, 32, 36, 36
+      )
+      ctx.drawImage(
+        img.shield,
+        128 * permState.shields, 0, 128, 128,
+        canvas.width / 2 + 54, 32, 36, 36
+      )
       
-      rect(0, 0, 240 ,100 , charcoal, silver)
-      if (img.mineCounter1 && img.mineCounter2) ctx.drawImage(img[`mineCounter${((Math.floor(state.clock / 30) + 1) % 2) + 1}`], 0, 0, 100, 100)
+      ctx.drawImage(img.Panel, 0, 0, 240, 100)
+      if (img.mineCounter1 && img.mineCounter2) ctx.drawImage(img[`mineCounter${((Math.floor(state.clock / 30) + 1) % 2) + 1}`], 15, 15, 70, 70)
       const m = state.minesLeft === "???" ? state.minesLeft : Math.min(999, Math.max(-99, state.minesLeft));
       const dm = m < 0 ? `-${String(Math.abs(m)).padStart(2, '0')}` : String(m).padStart(3, '0');
       text(dm, 110, 55, red, 72, "sans-serif", "left", "middle", "#FFF", 4)     
-      
-      rect(240, 0, 240 ,100 , charcoal, silver)
-      text(`\$${Math.min(9999, state.coins)}`, 250, 55, "#FFF", 72, "monospace", "left", "middle")
       
       rect(canvas.width - 230, 0, 230 ,100 , charcoal, silver)
       if (img.clock1 && img.clock2) ctx.drawImage(img[`clock${((Math.floor((state.clock) / 30) + 1) % 2) + 1}`], canvas.width - 230, 0, 100, 100)
@@ -1430,6 +1476,7 @@ function toggle(boo) {
 
     function loop() {
       permState.clock++;
+      if (state?.sonar) state.sonarClock++;
       if (permState.menu === "main") {
         draw();
         loopId = requestAnimationFrame(loop);
@@ -1472,8 +1519,14 @@ function toggle(boo) {
             }
             
             if (targetCell) {
-              state.nine.destination = targetCell;
               validDest = true;
+              for (let i = targetCell.row - 1; i <= targetCell.row + 1; i++) {
+                for (let j = targetCell.col - 1; j <= targetCell.col + 1; j++) {
+                  if (!state.grid[i]?.[j]) {validDest = false; break;};
+                }
+                if (!validDest) break;
+              }
+              if (validDest) state.nine.destination = targetCell;
             }
           }
         } else if (state.nine.moveCD <= 0) {
@@ -1502,26 +1555,28 @@ function toggle(boo) {
           if (boss.time <= 0 && !state.lost) gameOver();
           moveAtAngle(boss, boss.angle, boss.speed);
 
-          if (boss.x - boss.r <= 0) {
-            boss.x = boss.r;
-            boss.angle = Math.PI - boss.angle; 
-            play("tenBounce")
-            state.shake += 5;
-          } else if (boss.x + boss.r >= canvas.width) {
-            boss.x = canvas.width - boss.r;
-            boss.angle = Math.PI - boss.angle;
-            play("tenBounce")
-            state.shake += 5;
-          }; if (boss.y - boss.r <= 0) {
-            boss.y = boss.r;
-            boss.angle = -boss.angle; 
-            play("tenBounce")
-            state.shake += 5;
-          } else if (boss.y + boss.r >= canvas.height) {
-            boss.y = canvas.height - boss.r;
-            boss.angle = -boss.angle;
-            play("tenBounce")
-            state.shake += 5;
+          if (boss.revealed) {
+            if (boss.x - boss.r <= 0) {
+              boss.x = boss.r;
+              boss.angle = Math.PI - boss.angle; 
+              play("tenBounce")
+              state.shake += 5;
+            } else if (boss.x + boss.r >= canvas.width) {
+              boss.x = canvas.width - boss.r;
+              boss.angle = Math.PI - boss.angle;
+              play("tenBounce")
+              state.shake += 5;
+            }; if (boss.y - boss.r <= 0) {
+              boss.y = boss.r;
+              boss.angle = -boss.angle; 
+              play("tenBounce")
+              state.shake += 5;
+            } else if (boss.y + boss.r >= canvas.height) {
+              boss.y = canvas.height - boss.r;
+              boss.angle = -boss.angle;
+              play("tenBounce")
+              state.shake += 5;
+            }
           }
         }
       }
@@ -1587,8 +1642,6 @@ function toggle(boo) {
         rMineCD: 0,
         debug: false,
         
-        chording: true,
-        firstClick: 3, // 3, 1, or 0
         livesColor: function(val, max = 3, min = 1) {
           if (val < 1 && !state.boss) return charcoal;
           const ratio = this.bossRevealed ? this.rColor : (Math.max(min, Math.min(val, max)) - min) / (max - min);
@@ -1644,6 +1697,7 @@ function toggle(boo) {
         pressedCell: null,
         clock: 0,
         sonar: false,
+        sonarClock: 0,
         sonarCost: 50,
         useSonar: function() {
           if (this.nine.active || this.coins < this.sonarCost) return;
@@ -1662,8 +1716,8 @@ function toggle(boo) {
         suprise: false,
         nine: new bossNine(permState.stage === 9 ? true : false, grid.timer),
         ten: {
-          active: false,
-          amount: 0,
+          active: permState.stage === 10 ? true : false,
+          amount: 1,
           revealed: 0,
           tens: [],
         },
@@ -1699,12 +1753,6 @@ function toggle(boo) {
         },
       }
 
-      if (grid.cutout) {
-        grid.cutout.forEach(c => {
-          if (state.grid[c.row]) state.grid[c.row][c.col] = null;
-        });
-      }
-
       for (let r = 0; r < state.rows; r++) {
         state.grid[r] = [];
         for (let c = 0; c < state.cols; c++) {
@@ -1725,6 +1773,16 @@ function toggle(boo) {
           };
         }
       }
+
+      if (grid.cutout) {
+        grid.cutout.forEach(c => {
+          if (state.grid[c.row]) state.grid[c.row][c.col] = null;
+        });
+      }
+
+      if (permState.episode === 2 && permState.stage <= 8) state.bgm = bgmAlt[state.bgm];
+      console.log(state.bgm)
+
       for (let i=0; i<state.ten.amount; i++) {
         state.ten.tens[i] = new bossTen();
       }
@@ -1775,17 +1833,22 @@ function toggle(boo) {
 
     function startAdventure(ep) {
       permState.mode = "adv";
-      permState.episode = 1;
+      permState.episode = 2;
       permState.stage = 1;
-      permState.diff = "expert";
+      permState.diff = "novice";
       init();
     }
         
     function nextStage() {
+      if (state.lost) {
+        if (permState.continues === 0) permState.coins -= state.boss ? 10 : 100;
+        else permState.coins -= permState.continues * (state.boss ? 20 : 200)
+        permState.lives = 3;
+        permState.continues++;
+      } else if (permState.stage % 2 !== 0 && permState.stage <= 8) permState.shields++;
       if (state.coins < 0 || permState.stage > 8 + permState.episode) start()
       else init();
     }
-    ctx.font = "72px serif"
-    ctx.fillText("Click the canvas to start the game!", 10, canvas.height / 2);
+    text("Click here to start!", canvas.width / 2, canvas.height / 2, "#FFF", 72, "sans-serif", "center", "middle")
   </script>
 </html>
