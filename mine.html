@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
   <head>
@@ -272,6 +273,8 @@
   <script>
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
+    canvas.width = 1366;
+    canvas.height = 768;
     ctx.imageSmoothingEnabled = false;
 
     const consoleBox = document.getElementById('loadConsole');
@@ -388,6 +391,17 @@
       ButtonC: new Image(),
       ButtonD: new Image(),
 
+      Faces1: new Image(),
+      Faces2: new Image(),
+      Faces3: new Image(),
+      Faces4: new Image(),
+      Faces5: new Image(),
+      Faces6: new Image(),
+      Faces7: new Image(),
+      Hats: new Image(),
+      Hats2: new Image(),
+      Hats2_1: new Image(),
+      Hats2_2: new Image(),
       mineCounter1: new Image(),
       mineCounter2: new Image(),
       clock1: new Image(),
@@ -433,11 +447,11 @@
     function getGridAssetList() {
       let paths = [];
       const episodes = [1,2]; // add episode 3 later
-      const difficulties = ['beginner', 'novice', 'veteran', 'expert'];
+      const diffs = ['beginner', 'novice', 'veteran', 'expert'];
       
       for (let ep of episodes) {
         for (let i = 1; i <= 8 + ep; i++) {
-          for (let diff of difficulties) {
+          for (let diff of diffs) {
             paths.push(`grids/ep${ep}/${i}${diff}.json`)
             if ((i === 10 || i === 11) && diff !== 'beginner') paths.push(`grids/ep${ep}/${i}${diff}2.json`);
           }
@@ -585,6 +599,7 @@
     }
     
     const flagRow = [1,2,3,-1,-2,-3,9]
+    const difficulty = ["beginner","novice","veteran","expert"];
 
     const outlineColor = [
       0,
@@ -670,42 +685,42 @@
         let oob = false;
         for (let i=-1; i<=1; i++) {
           if (dir === "left") {
-            const moving = state.grid[this.row + i][this.col - 2];
+            const moving = state.grid[this.row + i]?.[this.col - 2];
             if (!moving) {
               oob = true;
               break;
             }
-            const target = state.grid[this.row + i][this.col + 1];
+            const target = state.grid[this.row + i]?.[this.col + 1];
             target.opened = moving.opened;
             target.mine = moving.mine;
             if (!moving.mine) moving.flagged = false;
           } else if (dir === "right") {
-            const moving = state.grid[this.row + i][this.col + 2];
+            const moving = state.grid[this.row + i]?.[this.col + 2];
             if (!moving) {
               oob = true;
               break;
             }
-            const target = state.grid[this.row + i][this.col - 1];
+            const target = state.grid[this.row + i]?.[this.col - 1];
             target.opened = moving.opened;
             target.mine = moving.mine;
             if (!moving.mine) moving.flagged = false;
           } else if (dir === "down") {
-            const moving = state.grid[this.row + 2][this.col + i];
+            const moving = state.grid[this.row + 2]?.[this.col + i];
             if (!moving) {
               oob = true;
               break;
             }
-            const target = state.grid[this.row - 1][this.col + i];
+            const target = state.grid[this.row - 1]?.[this.col + i];
             target.opened = moving.opened;
             target.mine = moving.mine;
             if (!moving.mine) moving.flagged = false;
           } else if (dir === "up") {
-            const moving = state.grid[this.row - 2][this.col + i];
+            const moving = state.grid[this.row - 2]?.[this.col + i];
             if (!moving) {
               oob = true;
               break;
             }
-            const target = state.grid[this.row + 1][this.col + i];
+            const target = state.grid[this.row + 1]?.[this.col + i];
             target.opened = moving.opened;
             target.mine = moving.mine;
             if (!moving.mine) moving.flagged = false;
@@ -770,16 +785,31 @@
         this.y = null;
         this.r = 50;
         this.speed = 0;
+        this.acceleration = 10 + (permState.diff * 10);
+        if (settings.legacySpeed) this.acceleration += 20;
+        this.acceleration /= 60;
         this.angle = 0;
         this.beepcd = 0;
+        this.light = {r: 1.0, g: 1.0, b: 1.0};
       }
+
+      get tint() {
+        let val = Math.pow(Math.ceil(this.time) / 10, 1.2); 
+        return {
+          r: 1.0,
+          g: val,
+          b: val
+        };
+      }
+
       click() {
         play("tenReset")
         if (!this.activated) this.activated = true;
         this.time = 10;
-        this.speed += 0.2;
+        this.speed += this.acceleration;
         this.angle = Math.random() * Math.PI * 2;
       };
+
       reveal(cell) {
         if (!cell) return;
         const worldX = cell.col * state.cellSize + state.cellSize / 2;
@@ -817,6 +847,7 @@
     
     canvas.addEventListener('mousedown', (e) => {
       if (!started || permState.menu !== "game") return;
+      state.clicking = true;
       let overTen = false;
       for (let i=0; i<state.ten?.amount; i++) {
         if (checkCircleCollision(state.ten.tens[i], state.mouse)) overTen = true;
@@ -833,7 +864,8 @@
     });
     
     window.addEventListener('mouseup', () => {
-      if (state.over) return;
+      if (!started || permState.menu !== "game") return;
+      state.clicking = false;
       if (state.pressedCell) state.pressedCell = null;
     });
 
@@ -1370,8 +1402,34 @@
       }
       ctx.translate(0,-100);
       ctx.restore();
-      rect(0,0,canvas.width, 100, silver, charcoal)
+      rect(0,0,canvas.width, 100, "rgb(0,0,0,0.5)")
       ctx.drawImage(img.Panel2, canvas.width / 2 - 100, 0, 200, 100)
+      let faceX = 0;
+      let faceY = 1;
+      let hatX = 3;
+      if (state.mouse.y < 100) {faceX = 0; hatX = 0}
+      else if (state.mouse.x < canvas.width / 3) {faceX = 3; hatX = 4}
+      else if (state.mouse.x > (2 * canvas.width) / 3) {faceX = 1; hatX = 2}
+      else faceX = 2;
+      if (state.clicking) faceY = 2;
+      if (state.won) {
+        faceX = 0;
+        faceY = 0;
+      } else if (state.lost) {
+        faceX = 2;
+        faceY = 3;
+        hatX = 5;
+      }
+      ctx.drawImage(
+        img.Faces1,
+        faceX * 40, faceY * 40, 40, 40,
+        canvas.width / 2 - 38, 14, 80, 80
+      )
+      ctx.drawImage(
+        img.Hats,
+        hatX * 40, 0, 40, 40,
+        canvas.width / 2 - 40, 10, 80, 80
+      )
       ctx.drawImage(
         img.radar,
         64 * (Math.floor(state.sonarClock / 7) % 8), 0, 64, 64,
@@ -1389,7 +1447,7 @@
 
       ctx.drawImage(
         img.healthmeter,
-        64 * (3 - state.lives), 0, 64, 64,
+        64 * (state.boss ? state.rColor : 3 - state.lives), 0, 64, 64,
         canvas.width / 2 + 54, 32, 36, 36
       )
       ctx.drawImage(
@@ -1398,16 +1456,16 @@
         canvas.width / 2 + 54, 32, 36, 36
       )
       
-      ctx.drawImage(img.Panel, 0, 0, 240, 100)
-      if (img.mineCounter1 && img.mineCounter2) ctx.drawImage(img[`mineCounter${((Math.floor(state.clock / 30) + 1) % 2) + 1}`], 15, 15, 70, 70)
+      ctx.drawImage(img.Panel, canvas.width / 2 - 300, 0, 200, 100)
+      if (img.mineCounter1 && img.mineCounter2) ctx.drawImage(img[`mineCounter${((Math.floor(state.clock / 30) + 1) % 2) + 1}`], canvas.width / 2 - 290, 15, 70, 70)
       const m = state.minesLeft === "???" ? state.minesLeft : Math.min(999, Math.max(-99, state.minesLeft));
       const dm = m < 0 ? `-${String(Math.abs(m)).padStart(2, '0')}` : String(m).padStart(3, '0');
-      text(dm, 110, 55, red, 72, "sans-serif", "left", "middle", "#FFF", 4)     
+      text(dm, canvas.width / 2 - 220, 55, red, 64, "sans-serif", "left", "middle", "#FFF", 4)     
       
-      rect(canvas.width - 230, 0, 230 ,100 , charcoal, silver)
-      if (img.clock1 && img.clock2) ctx.drawImage(img[`clock${((Math.floor((state.clock) / 30) + 1) % 2) + 1}`], canvas.width - 230, 0, 100, 100)
+      ctx.drawImage(img.Panel, canvas.width / 2 + 100, 0, 200, 100)
+      if (img.clock1 && img.clock2) ctx.drawImage(img[`clock${((Math.floor((state.clock) / 30) + 1) % 2) + 1}`], canvas.width / 2 + 110, 15, 70, 70)
       const t = String(Math.min(999, Math.max(0, state.nine.revealed ? state.nine.timer : Math.floor((state.over ? state.completionTime : state.clock) / 60)))).padStart(3, '0')
-      text(t, canvas.width - 10, 55, red, 72, "sans-serif", "right", "middle", "#FFF", 4)
+      text(t, canvas.width / 2 + 285, 55, red, 64, "sans-serif", "right", "middle", "#FFF", 4)
       
       for (let i = 0; i<state.ten.amount; i++) {
         const boss = state.ten.tens[i];
@@ -1420,7 +1478,10 @@
                 const basePattern = [1, 2, 1, 0];
                 const altPattern  = [1, 0, 1, 2];
                 let speed = 4;
-                if (Math.ceil(boss.time) <= 4) speed *= Math.ceil(boss.time) + (4 - Math.ceil(boss.time)) * 3
+                for (let i=4; i>0; i--) {
+                  if (Math.ceil(boss.time) <= i) speed *= 2;
+                  else break;
+                }
                 
                 let patternIndex = Math.floor(boss.time * speed) % basePattern.length;
                 
@@ -1429,8 +1490,8 @@
                 
                 const w = boss.r * 4;
                 let h = w;
-                if (scaleState === 0) h -= 30;
-                if (scaleState === 2) h += 30;
+                if (scaleState === 0) h *= 0.9;
+                if (scaleState === 2) h *= 1.1;
                 
                 ctx.drawImage(img.tenPiston, -boss.r * 2, -boss.r * 2 + ((w - h) / 2), w, h);
                 ctx.rotate((36 * Math.PI) / 180);
@@ -1439,16 +1500,22 @@
           }
           if (img.tenBody) {
             ctx.save();
-              let factor = 1 - Math.min(10, Math.max(0, Math.ceil(boss.time))) / 10;
-              let brightnessVal = 200 - (150 * factor);
-              ctx.filter = `brightness(${brightnessVal}%)`;
+              ctx.filter = 'brightness(200%)';
+              ctx.beginPath();
+              ctx.arc(boss.x, boss.y, boss.r, 0, Math.PI * 2);
+              ctx.clip();
               ctx.drawImage(img.tenBody, boss.x - boss.r * 2, boss.y - boss.r * 2, boss.r * 4, boss.r * 4);
+              ctx.globalCompositeOperation = 'multiply';
+              const r = boss.tint.r * 255;
+              const g = boss.tint.g * 255;
+              const b = boss.tint.b * 255;
+              ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+              ctx.fillRect(boss.x - boss.r * 2, boss.y - boss.r * 2, boss.r * 4, boss.r * 4);
             ctx.restore();
           }
           else console.error("Ten's body doesn't exist!")
           if (img.Numbers10) {
               ctx.save();
-                if (boss.time <= 0) ctx.filter = 'sepia(100%) saturate(500%) hue-rotate(310deg) brightness(67%)';
                 let num = Math.min(10, Math.max(0, Math.ceil(boss.time)));
                 let tileSize = 64;
                 let col = num % 4;
@@ -1461,6 +1528,14 @@
                   sx, sy, tileSize, tileSize, 
                   boss.x - drawSize / 2, boss.y - drawSize / 2, drawSize, drawSize
                 );
+                if (boss.time <= 0) {
+                  ctx.globalCompositeOperation = 'multiply';
+                  const r = boss.tint.r * 255;
+                  const g = boss.tint.g * 255;
+                  const b = boss.tint.b * 255;
+                  ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+                  ctx.fillRect(boss.x - drawSize / 2, boss.y - drawSize / 2, drawSize, drawSize);
+                }
               ctx.restore();
           } else console.error("Uh oh; 10's numbers don't exist!")
         };
@@ -1490,18 +1565,17 @@
       if (state.bossRevealed) {
         state.rColorCD--;
         state.rMineCD--;
-        if (state.rColorCD <= 0) {state.rColor = Math.random(); state.rColorCD = 5};
+        if (state.rColorCD <= 0) {state.rColor = randomNumber(0, 3, true); state.rColorCD = 5};
         if (state.rMineCD <= 0) {state.rMine = Math.floor(Math.random() * 1098 - 99); state.rMineCD = 6};
       }
       if (state.nine.active && state.nine.revealed) {
         const nineCell = state.grid[state.nine.row][state.nine.col];
         if (state.clicked || state.suprise) state.nine.timerCD--
         if (state.clicked) {
-          state.nine.thinkCD--;
+          if (state.nine.destination && state.nine.cell(state.nine.destination)) state.nine.thinkCD--;
           state.nine.moveCD--;
         }
         if (state.nine.thinkCD <= 0) {
-          state.nine.thinkCD = Math.random() * 130 + 20;
           let validDest = false;
           let attempts = 0;
           
@@ -1526,7 +1600,8 @@
                 }
                 if (!validDest) break;
               }
-              if (validDest) state.nine.destination = targetCell;
+              if (validDest) {state.nine.destination = targetCell; state.nine.destDist = Math.abs(targetCell.row - nineCell.row) + Math.abs(targetCell.col - nineCell.col);}
+              state.nine.thinkCD = state.nine.destDist * (0.4 - (permState.diff / 10)) * 60;
             }
           }
         } else if (state.nine.moveCD <= 0) {
@@ -1549,7 +1624,8 @@
         for (let i=0; i<state.ten.amount; i++) {
           const boss = state.ten.tens[i];
           if (state.clicked && !boss.activated) boss.activated = true
-          if (boss.activated && !state.over && !boss.debug) boss.time -= (1 + state.fails * 0.1)/60;
+          const timerSpeed = 1 / Math.max(0.1, 1.0 - (state.fails * 0.05));
+          if (boss.activated && !state.over && !boss.debug) boss.time -= timerSpeed / 60;
           if (boss.time < 4 && boss.time > 0 && boss.beepcd <= 0) {play("tenBeep"); boss.beepcd = Math.max(Math.floor(boss.time) * 10, 4)};
           boss.beepcd--;
           if (boss.time <= 0 && !state.lost) gameOver();
@@ -1600,7 +1676,7 @@
         mus[i].currentTime = 0; 
       } 
 
-      const grid = loadedGrids[`grids/ep${permState.episode}/${permState.stage}${permState.diff}.json`]; // add variants (10 phase 2) later
+      const grid = loadedGrids[`grids/ep${permState.episode}/${permState.stage}${difficulty[permState.diff]}.json`]; // add variants (10 phase 2) later
 
       state = { 
         get mouse() {return permState.mouse},
@@ -1641,37 +1717,6 @@
         rMine: null,
         rMineCD: 0,
         debug: false,
-        
-        livesColor: function(val, max = 3, min = 1) {
-          if (val < 1 && !state.boss) return charcoal;
-          const ratio = this.bossRevealed ? this.rColor : (Math.max(min, Math.min(val, max)) - min) / (max - min);
-          const h = ratio * 120;
-          const s = 1;
-          const l = 0.5;
-          const c = (1 - Math.abs(2 * l - 1)) * s;
-          const x = c * (1 - Math.abs((h / 60) % 2 - 1));
-          const m = l - c / 2;
-          let r = 0, g = 0, b = 0;
-          if (0 <= h && h < 60) {
-            r = c; g = x; b = 0;
-          } else if (60 <= h && h < 120) {
-            r = x; g = c; b = 0;
-          } else if (120 <= h && h < 180) {
-            r = 0; g = c; b = x;
-          }
-          const semifinal = {
-            r: Math.round((r + m) * 255),
-            g: Math.round((g + m) * 255),
-            b: Math.round((b + m) * 255),
-          }
-          let final = {};
-          for (let i in semifinal) {
-            const hex = semifinal[i].toString(16);
-            final[i] = hex.length === 1 ? "0" + hex : hex;
-          }     
-          
-          return `#${final.r}${final.g}${final.b}`;         
-        },
         rColor: null,
         rColorCD: 0,
 
@@ -1809,10 +1854,8 @@
       const gridH = state.rows * state.cellSize;
       const availableW = canvas.width - 100;
       const availableH = canvas.height - 180;
-      const zoomX = availableW / gridW;
-      const zoomY = availableH / gridH;
 
-      state.cam.zoom = Math.min(zoomX, zoomY);
+      state.cam.zoom = Math.min(availableW / gridW, availableH / gridH);
       state.cam.x = canvas.width / 2 - gridW / 2;
       state.cam.y = (canvas.height + 100) / 2 - (gridH / 2 + 100);
       permState.menu = "game";
@@ -1824,8 +1867,6 @@
       permState.coins = 1050;
       permState.continues = 0;
       permState.lives = 3;
-      canvas.width = 1366;
-      canvas.height = 768;
       if (!started) loop();
       started = true;
       mus.oneMenu.play();
@@ -1835,7 +1876,7 @@
       permState.mode = "adv";
       permState.episode = 2;
       permState.stage = 1;
-      permState.diff = "novice";
+      permState.diff = 3;
       init();
     }
         
