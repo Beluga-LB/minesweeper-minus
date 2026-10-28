@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
   <head>
@@ -19,7 +18,7 @@
       padding: 0;
       width: 100vw;
       height: 100vh;
-      background: #000; /* Optional: fills the letterbox gaps with black */
+      background: #000;
       overflow: hidden;
     }
 
@@ -457,6 +456,7 @@
           }
         }
       }
+      paths.push('grids/test.json')
       return paths;
     }
     const gridPaths = getGridAssetList();
@@ -846,7 +846,7 @@
     });
     
     canvas.addEventListener('mousedown', (e) => {
-      if (!started || permState.menu !== "game") return;
+      if (!started || permState.menu !== "game" || state.mouse.y < 100) return;
       state.clicking = true;
       let overTen = false;
       for (let i=0; i<state.ten?.amount; i++) {
@@ -890,6 +890,7 @@
 
       if (state.mouse.y < 100) {
         if (checkCircleRectCollision(state.mouse, {x: canvas.width / 2 - 100, y: 0 ,w: 50, h: 100})) state.useSonar();
+        return;
       }
       
       
@@ -925,7 +926,7 @@
 
     canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      if (state.over || !started || permState.menu !== "game") return;
+      if (state.over || !started || permState.menu !== "game" || state.mouse.y < 100) return;
       for (let i=0; i<state.ten?.amount; i++) {
         if (checkCircleCollision(state.ten.tens[i], state.mouse)) {
           state.ten.tens[i].click();
@@ -1009,8 +1010,8 @@
         for (let i = r - 1; i <= r + 1; i++) {
           if (!state.grid[i]) continue;
           for (let j = c - 1; j <= c + 1; j++) {
-            if (!state.grid[i][j]) continue;
             const neighbor = state.grid[i][j];
+            if (!state.grid[i][j] || !canSee(cell, neighbor)) continue;
             openCell(neighbor, false, true);
           }
         }
@@ -1032,10 +1033,9 @@
       const r = cell.row;
       const c = cell.col;
       for (let i = r - 1; i <= r + 1; i++) {
-        if (i < 0 || i >= state.rows) continue;
         for (let j = c - 1; j <= c + 1; j++) {
-          if (j < 0 || j >= state.cols) continue;
-            openCell(state.grid[i][j], true);
+          if (!state.grid[i]?.[j]  || !canSee(cell, state.grid[i][j])) continue;
+          openCell(state.grid[i][j], true);
         }
       }
     }
@@ -1094,10 +1094,17 @@
 
       if (permState.mode === "adv") {
         if (!state.lost) {
-          permState.stage++;
           permState.coins += 100;
         }
       }
+      const gridW = state.cols * state.cellSize;
+      const gridH = state.rows * state.cellSize;
+      const availableW = canvas.width - 100;
+      const availableH = canvas.height - 180;
+
+      state.cam.zoom = Math.min(availableW / gridW, availableH / gridH);
+      state.cam.x = canvas.width / 2 - gridW / 2;
+      state.cam.y = (canvas.height + 100) / 2 - (gridH / 2 + 100);
     }
 
     function cellValue(cell, flags = false, anti = false) {
@@ -1132,6 +1139,53 @@
         }
       }
       return count;
+    }
+
+    function canSee(cell, neighbor) {
+      // Jorel, why did you make these anti-chording borders?!??!?!??
+      if (!cell || !neighbor) return false;
+      
+      const r1 = cell.row;
+      const c1 = cell.col;
+      const r2 = neighbor.row;
+      const c2 = neighbor.col;
+      const rDiff = r2 - r1;
+      const cDiff = c2 - c1;
+
+      if (rDiff === -1 && cDiff === 0 && cell.borders?.top) return false;
+      if (rDiff === 1 && cDiff === 0  && cell.borders?.bottom) return false;
+      if (rDiff === 0 && cDiff === -1 && cell.borders?.left) return false;
+      if (rDiff === 0 && cDiff === 1  && cell.borders?.right) return false;
+
+      if (rDiff === -1 && cDiff === -1) {
+        const leftBlocked = cell.borders?.left && state.grid[r1 - 1]?.[c1]?.borders?.left;
+        const topBlocked = cell.borders?.top && state.grid[r1]?.[c1 - 1]?.borders?.top;
+        if (leftBlocked || topBlocked) return false;
+      }
+      if (rDiff === -1 && cDiff === 1) {
+        const rightBlocked = cell.borders?.right && state.grid[r1 - 1]?.[c1]?.borders?.right;
+        const topBlocked = cell.borders?.top && state.grid[r1]?.[c1 + 1]?.borders?.top;
+        if (rightBlocked || topBlocked) return false;
+      }
+      if (rDiff === 1 && cDiff === -1) {
+        const leftBlocked = cell.borders?.left && state.grid[r1 + 1]?.[c1]?.borders?.left;
+        const bottomBlocked = cell.borders?.bottom && state.grid[r1]?.[c1 - 1]?.borders?.bottom;
+        if (leftBlocked || bottomBlocked) return false;
+      }
+      if (rDiff === 1 && cDiff === 1) {
+        const rightBlocked = cell.borders?.right && state.grid[r1 + 1]?.[c1]?.borders?.right;
+        const bottomBlocked = cell.borders?.bottom && state.grid[r1]?.[c1 + 1]?.borders?.bottom;
+        if (rightBlocked || bottomBlocked) return false;
+      }
+
+      const revRDiff = -rDiff;
+      const revCDiff = -cDiff;
+      if (revRDiff === -1 && revCDiff === 0 && neighbor.borders?.top) return false;
+      if (revRDiff === 1 && revCDiff === 0  && neighbor.borders?.bottom) return false;
+      if (revRDiff === 0 && revCDiff === -1 && neighbor.borders?.left) return false;
+      if (revRDiff === 0 && revCDiff === 1  && neighbor.borders?.right) return false;
+
+      return true;
     }
 
     function placeMines(cell) {
@@ -1280,9 +1334,11 @@
           
           if (cell === state.pressedCell) outline = true;
           else if (state.pressedCell && state.pressedCell.opened) {
-            const rowOffset = Math.abs(cell.row - state.pressedCell.row);
-            const colOffset = Math.abs(cell.col - state.pressedCell.col);
-            if (rowOffset <= 1 && colOffset <= 1) outline = true;
+            const pCell = state.pressedCell;
+            const rowOffset = Math.abs(cell.row - pCell.row);
+            const colOffset = Math.abs(cell.col - pCell.col);
+
+            if (rowOffset <= 1 && colOffset <= 1 && canSee(pCell, cell))outline = true;
           }
           if (cell.opened) offsetX += 2;
           if (cell.mine && (cell.opened || state.debug)) {offsetY = 24; offsetX = 3;};
@@ -1323,6 +1379,36 @@
               0, (2 * outlineTheme) * outlineSize, outlineSize * 16, outlineSize - 1,
               x, y, state.cellSize, state.cellSize / 16
             )
+          }
+          if (cell.borders) {
+            if (cell.borders.left) { // left
+              ctx.drawImage(
+                img.outline_blocks,
+                (2 * outlineTheme + 1) * outlineSize, 0, outlineSize - 1, 16 * outlineSize,
+                x, y, state.cellSize / 16, state.cellSize
+              )
+            }
+            if (cell.borders.right) { // right
+              ctx.drawImage(
+                img.outline_blocks,
+                (2 * outlineTheme + 1) * outlineSize, 0, outlineSize - 1, 16 * outlineSize,
+                x + state.cellSize, y, state.cellSize / 16, state.cellSize
+              )
+            }
+            if (cell.borders.bottom) { // down
+              ctx.drawImage(
+                img.outline_blocks_alt,
+                0, (2 * outlineTheme + 1) * outlineSize, outlineSize * 16, outlineSize - 1,
+                x, y + state.cellSize, state.cellSize, state.cellSize / 16
+              )
+            }
+            if (cell.borders.top) { // up
+              ctx.drawImage(
+                img.outline_blocks_alt,
+                0, (2 * outlineTheme + 1) * outlineSize, outlineSize * 16, outlineSize - 1,
+                x, y, state.cellSize, state.cellSize / 16
+              )
+            }
           }
           if (outline) ctx.drawImage(img["white_outline"], x, y, state.cellSize, state.cellSize)
           
@@ -1404,6 +1490,11 @@
       ctx.restore();
       rect(0,0,canvas.width, 100, "rgb(0,0,0,0.5)")
       ctx.drawImage(img.Panel2, canvas.width / 2 - 100, 0, 200, 100)
+
+      let face = Math.ceil(permState.stage / 2);
+      if (state.nine.active) face = 5;
+      else if (state.ten.active) face = 6;
+      else if (state.eleven.active) face = 7;
       let faceX = 0;
       let faceY = 1;
       let hatX = 3;
@@ -1411,17 +1502,18 @@
       else if (state.mouse.x < canvas.width / 3) {faceX = 3; hatX = 4}
       else if (state.mouse.x > (2 * canvas.width) / 3) {faceX = 1; hatX = 2}
       else faceX = 2;
-      if (state.clicking) faceY = 2;
-      if (state.won) {
-        faceX = 0;
-        faceY = 0;
-      } else if (state.lost) {
+      if (state.clicking) faceY = 2; 
+      if (state.lost) {
         faceX = 2;
         faceY = 3;
         hatX = 5;
+      } else if (state.won) {
+        faceX = Math.floor(permState.clock / 15) % 2;
+        faceY = 0;
+        hatX = Math.floor(permState.clock / 15) % 2;
       }
       ctx.drawImage(
-        img.Faces1,
+        img[`Faces${face}`],
         faceX * 40, faceY * 40, 40, 40,
         canvas.width / 2 - 38, 14, 80, 80
       )
@@ -1670,13 +1762,13 @@
       loopId = requestAnimationFrame(loop);
     }
 
-    function init() {
+    function init(test = false) {
       for (let i in mus) {
         mus[i].pause();
         mus[i].currentTime = 0; 
       } 
 
-      const grid = loadedGrids[`grids/ep${permState.episode}/${permState.stage}${difficulty[permState.diff]}.json`]; // add variants (10 phase 2) later
+      const grid = test ? loadedGrids[`grids/test.json`] : loadedGrids[`grids/ep${permState.episode}/${permState.stage}${difficulty[permState.diff]}.json`]; // add variants (10 phase 2) later
 
       state = { 
         get mouse() {return permState.mouse},
@@ -1825,6 +1917,19 @@
         });
       }
 
+      if (grid.borders) {
+        grid.borders.forEach(b => {
+          const cell = state.grid[b.row]?.[b.col];
+          if (!cell) return;
+          cell.borders = {
+            top: (b.val & 8) !== 0,
+            right: (b.val & 4) !== 0,
+            bottom: (b.val & 2) !== 0,
+            left: (b.val & 1) !== 0
+          };
+        });
+      }
+
       if (permState.episode === 2 && permState.stage <= 8) state.bgm = bgmAlt[state.bgm];
       console.log(state.bgm)
 
@@ -1876,7 +1981,7 @@
       permState.mode = "adv";
       permState.episode = 2;
       permState.stage = 1;
-      permState.diff = 3;
+      permState.diff = 1;
       init();
     }
         
@@ -1886,7 +1991,10 @@
         else permState.coins -= permState.continues * (state.boss ? 20 : 200)
         permState.lives = 3;
         permState.continues++;
-      } else if (permState.stage % 2 !== 0 && permState.stage <= 8) permState.shields++;
+      } else {
+        permState.stage++;
+        if (permState.stage % 2 !== 0 && permState.stage <= 8) permState.shields++;
+      }
       if (state.coins < 0 || permState.stage > 8 + permState.episode) start()
       else init();
     }

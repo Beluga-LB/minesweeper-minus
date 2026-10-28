@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Minesweeper Board Shape Editor</title>
+  <title>Minesweeper Board Shape & Border Editor</title>
   <style>
     * {
       box-sizing: border-box;
@@ -59,6 +59,12 @@
     button:hover {
       background: #005999;
     }
+    .btn-mode {
+      background: #8e44ad;
+    }
+    .btn-mode.active {
+      background: #c0392b;
+    }
     .btn-copy {
       background: #27ae60;
     }
@@ -71,17 +77,17 @@
     .btn-invert:hover {
       background: #d35400;
     }
-    .btn-center {
-      background: #8e44ad;
-    }
-    .btn-center:hover {
-      background: #71368a;
-    }
     .btn-import {
       background: #2980b9;
     }
     .btn-import:hover {
       background: #1f618d;
+    }
+    .btn-img {
+      background: #d35400;
+    }
+    .btn-img:hover {
+      background: #a04000;
     }
     .grid-wrapper {
       position: relative;
@@ -103,29 +109,29 @@
       position: relative;
     }
     .cell {
-      width: 32px;
-      height: 32px;
+      width: 34px;
+      height: 34px;
       background: #4a90e2;
       border: 1px solid #2a62a7;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 10px;
+      font-size: 9px;
+      color: #aaa;
       cursor: pointer;
       position: relative;
     }
     .cell.null-tile {
       background: #222;
       border-color: #111;
-      color: #555;
+      color: #333;
     }
-    /* Center lines on cells */
-    .cell.center-v {
-      border-right: 2px solid #ff00ff !important;
-    }
-    .cell.center-h {
-      border-bottom: 2px solid #ff00ff !important;
-    }
+    /* Custom Border Overlays */
+    .cell.b-top { border-top: 3px solid #ffd700 !important; }
+    .cell.b-right { border-right: 3px solid #ffd700 !important; }
+    .cell.b-bottom { border-bottom: 3px solid #ffd700 !important; }
+    .cell.b-left { border-left: 3px solid #ffd700 !important; }
+
     .output-box {
       width: 100%;
       max-width: 800px;
@@ -133,7 +139,7 @@
     }
     textarea {
       width: 100%;
-      height: 120px;
+      height: 140px;
       background: #111;
       color: #0f0;
       border: 1px solid #444;
@@ -146,18 +152,21 @@
 </head>
 <body>
 
-  <h1>Grid Shape Editor</h1>
-  <p style="color: #aaa; margin-top: 0;">Click or drag to toggle tiles into <code>null</code>.</p>
+  <h1>Grid Shape & Border Editor</h1>
+  <p id="instruction" style="color: #ffd700; margin-top: 0;">Current Mode: <b>Cutouts</b> (Click or drag to toggle null tiles)</p>
 
   <div class="controls">
-    <label>Rows: <input type="number" id="rowsInput" value="16" min="1" max="50"></label>
-    <label>Cols: <input type="number" id="colsInput" value="16" min="1" max="50"></label>
+    <label>Rows: <input type="number" id="rowsInput" value="12" min="1" max="100"></label>
+    <label>Cols: <input type="number" id="colsInput" value="12" min="1" max="100"></label>
     <button onclick="generateGrid()">Reset Board</button>
+    <button id="modeBtn" class="btn-mode" onclick="toggleMode()">Switch to: Border Mode</button>
     <button class="btn-invert" onclick="invertCutouts()">Invert Cutouts</button>
-    <button class="btn-center" onclick="toggleCenterLines()">Toggle Center Lines</button>
     <button class="btn-import" onclick="document.getElementById('importFileInput').click()">Import JSON</button>
-    <button class="btn-copy" onclick="copyNullCoords()">Copy Null Coords</button>
+    <button class="btn-img" onclick="document.getElementById('importImgInput').click()">Import PNG Cutout</button>
+    <button class="btn-copy" onclick="copyOutput()">Copy JSON Data</button>
+    
     <input type="file" id="importFileInput" accept=".json" style="display: none;" onchange="importGridJSON(event)">
+    <input type="file" id="importImgInput" accept="image/png" style="display: none;" onchange="importGridPNG(event)">
   </div>
 
   <div class="grid-wrapper">
@@ -165,41 +174,67 @@
   </div>
 
   <div class="output-box">
-    <label style="margin-bottom: 6px; display: block;">Null Cell Coordinates:</label>
+    <label style="margin-bottom: 6px; display: block;">Generated Level JSON Data (cutout & borders):</label>
     <textarea id="output" readonly></textarea>
   </div>
 
   <script>
-    let rows = 16;
-    let cols = 16;
+    let rows = 12;
+    let cols = 12;
     let isMouseDown = false;
     let toggleTargetState = false; // true = make null, false = make active
-    let showCenterLines = false;
+    let currentMode = 'cutout'; // 'cutout' or 'border'
+    let borderMap = new Map(); // Key: "row,col", Value: bitmask 1-15
 
     document.addEventListener('mousedown', () => isMouseDown = true);
     document.addEventListener('mouseup', () => isMouseDown = false);
 
-    function generateGrid(cutoutCoords = null) {
-      if (!cutoutCoords) {
+    function toggleMode() {
+      currentMode = currentMode === 'cutout' ? 'border' : 'cutout';
+      const btn = document.getElementById('modeBtn');
+      const inst = document.getElementById('instruction');
+      if (currentMode === 'border') {
+        btn.textContent = "Switch to: Cutout Mode";
+        btn.classList.add('active');
+        inst.innerHTML = "Current Mode: <b>Borders</b> (Click near the edges of a tile to toggle custom walls)";
+      } else {
+        btn.textContent = "Switch to: Border Mode";
+        btn.classList.remove('active');
+        inst.innerHTML = "Current Mode: <b>Cutouts</b> (Click or drag to toggle null tiles)";
+      }
+    }
+
+    function generateGrid(savedData = null) {
+      if (!savedData) {
         rows = parseInt(document.getElementById('rowsInput').value);
         cols = parseInt(document.getElementById('colsInput').value);
       } else {
+        rows = savedData.rows || rows;
+        cols = savedData.cols || cols;
         document.getElementById('rowsInput').value = rows;
         document.getElementById('colsInput').value = cols;
+        
+        // Load cutouts
+        const cutoutSet = new Set();
+        if (Array.isArray(savedData.cutout)) {
+          savedData.cutout.forEach(c => cutoutSet.add(`${c.row},${c.col}`));
+        }
+        window.loadedCutoutSet = cutoutSet;
+
+        // Load borders
+        borderMap.clear();
+        if (Array.isArray(savedData.borders)) {
+          savedData.borders.forEach(b => {
+            borderMap.set(`${b.row},${b.col}`, b.val);
+          });
+        }
       }
       
       const gridContainer = document.getElementById('grid');
       gridContainer.innerHTML = '';
-      gridContainer.style.gridTemplateColumns = `repeat(${cols}, 32px)`;
+      gridContainer.style.gridTemplateColumns = `repeat(${cols}, 34px)`;
 
-      // Map cutout set if array passed
-      const cutoutSet = new Set();
-      if (Array.isArray(cutoutCoords)) {
-        cutoutCoords.forEach(c => cutoutSet.add(`${c.row},${c.col}`));
-      }
-
-      const midRow = Math.floor((rows - 1) / 2);
-      const midCol = Math.floor((cols - 1) / 2);
+      const cutoutSet = window.loadedCutoutSet || new Set();
 
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -212,20 +247,22 @@
             cell.classList.add('null-tile');
           }
 
-          if (showCenterLines) {
-            if (c === midCol) cell.classList.add('center-v');
-            if (r === midRow) cell.classList.add('center-h');
-          }
-          
+          applyBorderClasses(cell, r, c);
+
+          // Click handling based on active mode
           cell.addEventListener('mousedown', (e) => {
             e.preventDefault();
-            cell.classList.toggle('null-tile');
-            toggleTargetState = cell.classList.contains('null-tile');
-            updateOutput();
+            if (currentMode === 'cutout') {
+              cell.classList.toggle('null-tile');
+              toggleTargetState = cell.classList.contains('null-tile');
+              updateOutput();
+            } else {
+              handleBorderClick(e, cell, r, c);
+            }
           });
 
           cell.addEventListener('mouseenter', () => {
-            if (isMouseDown) {
+            if (isMouseDown && currentMode === 'cutout') {
               if (toggleTargetState) {
                 cell.classList.add('null-tile');
               } else {
@@ -238,7 +275,71 @@
           gridContainer.appendChild(cell);
         }
       }
+      window.loadedCutoutSet = null;
       updateOutput();
+    }
+
+    function applyBorderClasses(cell, r, c) {
+      cell.classList.remove('b-top', 'b-right', 'b-bottom', 'b-left');
+      const val = borderMap.get(`${r},${c}`) || 0;
+      if ((val & 8) !== 0) cell.classList.add('b-top');
+      if ((val & 4) !== 0) cell.classList.add('b-right');
+      if ((val & 2) !== 0) cell.classList.add('b-bottom');
+      if ((val & 1) !== 0) cell.classList.add('b-left');
+    }
+
+    function handleBorderClick(e, cell, r, c) {
+      const rect = cell.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const w = rect.width;
+      const h = rect.height;
+
+      // Determine closest edge (Top=8, Right=4, Bottom=2, Left=1)
+      const dTop = y;
+      const dBottom = h - y;
+      const dLeft = x;
+      const dRight = w - x;
+
+      const minDist = Math.min(dTop, dBottom, dLeft, dRight);
+      
+      if (minDist === dTop) toggleBorderEdge(r, c, 'top', 8, r - 1, c, 2);
+      else if (minDist === dBottom) toggleBorderEdge(r, c, 'bottom', 2, r + 1, c, 8);
+      else if (minDist === dLeft) toggleBorderEdge(r, c, 'left', 1, r, c - 1, 4);
+      else if (minDist === dRight) toggleBorderEdge(r, c, 'right', 4, r, c + 1, 1);
+
+      // Refresh all cells visually
+      refreshGridVisuals();
+      updateOutput();
+    }
+
+    function toggleBorderEdge(r, c, edge, bitSelf, nr, nc, bitNeighbor) {
+      const keySelf = `${r},${c}`;
+      const valSelf = borderMap.get(keySelf) || 0;
+      const hasBorder = (valSelf & bitSelf) !== 0;
+
+      // Toggle bit on current cell
+      const newSelf = hasBorder ? (valSelf & ~bitSelf) : (valSelf | bitSelf);
+      if (newSelf === 0) borderMap.delete(keySelf);
+      else borderMap.set(keySelf, newSelf);
+
+      // Toggle bit on neighbor cell if valid
+      if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+        const keyNeighbor = `${nr},${nc}`;
+        const valNeighbor = borderMap.get(keyNeighbor) || 0;
+        const newNeighbor = hasBorder ? (valNeighbor & ~bitNeighbor) : (valNeighbor | bitNeighbor);
+        if (newNeighbor === 0) borderMap.delete(keyNeighbor);
+        else borderMap.set(keyNeighbor, newNeighbor);
+      }
+    }
+
+    function refreshGridVisuals() {
+      const cells = document.querySelectorAll('.cell');
+      cells.forEach(cell => {
+        const r = parseInt(cell.dataset.row);
+        const c = parseInt(cell.dataset.col);
+        applyBorderClasses(cell, r, c);
+      });
     }
 
     function getNullCoords() {
@@ -253,9 +354,27 @@
       return coords;
     }
 
+    function getBordersArray() {
+      const borders = [];
+      borderMap.forEach((val, key) => {
+        const parts = key.split(',');
+        borders.push({
+          row: parseInt(parts[0]),
+          col: parseInt(parts[1]),
+          val: val
+        });
+      });
+      return borders;
+    }
+
     function updateOutput() {
-      const coords = getNullCoords();
-      document.getElementById('output').value = JSON.stringify(coords, null, 2);
+      const data = {
+        rows: rows,
+        cols: cols,
+        cutout: getNullCoords(),
+        borders: getBordersArray()
+      };
+      document.getElementById('output').value = JSON.stringify(data, null, 2);
     }
 
     function invertCutouts() {
@@ -266,12 +385,6 @@
       updateOutput();
     }
 
-    function toggleCenterLines() {
-      showCenterLines = !showCenterLines;
-      const currentNulls = getNullCoords();
-      generateGrid(currentNulls);
-    }
-
     async function importGridJSON(e) {
       const file = e.target.files[0];
       if (!file) return;
@@ -279,39 +392,58 @@
       try {
         const text = await file.text();
         const data = JSON.parse(text);
-
-        let cutoutArray = [];
-
-        // Check if it's a full grid object or just a cutout array
-        if (data.rows && data.cols) {
-          rows = data.rows;
-          cols = data.cols;
-          cutoutArray = data.cutout || [];
-        } else if (Array.isArray(data)) {
-          cutoutArray = data;
-          // Infer max rows and cols if possible
-          let maxR = 0, maxC = 0;
-          cutoutArray.forEach(c => {
-            if (c.row > maxR) maxR = c.row;
-            if (c.col > maxC) maxC = c.col;
-          });
-          rows = Math.max(rows, maxR + 1);
-          cols = Math.max(cols, maxC + 1);
-        }
-
-        generateGrid(cutoutArray);
+        generateGrid(data);
         alert(`Successfully imported "${file.name}"!`);
       } catch (err) {
         alert("Failed to parse JSON file: " + err.message);
       }
-      e.target.value = ''; // Reset input
+      e.target.value = '';
     }
 
-    function copyNullCoords() {
+    function importGridPNG(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const img = new Image();
+        img.onload = function() {
+          cols = img.width;
+          rows = img.height;
+
+          const offscreenCanvas = document.createElement('canvas');
+          offscreenCanvas.width = cols;
+          offscreenCanvas.height = rows;
+          const offContext = offscreenCanvas.getContext('2d');
+          offContext.drawImage(img, 0, 0);
+
+          const imgData = offContext.getImageData(0, 0, cols, rows).data;
+          const cutoutArray = [];
+
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const index = (r * cols + c) * 4;
+              const blueChannel = imgData[index + 2];
+              if (blueChannel !== 0) {
+                cutoutArray.push({ row: r, col: c });
+              }
+            }
+          }
+
+          generateGrid({ rows, cols, cutout: cutoutArray, borders: [] });
+          alert(`Parsed PNG "${file.name}" (${cols}x${rows}) with ${cutoutArray.length} cutout tiles!`);
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    }
+
+    function copyOutput() {
       const output = document.getElementById('output');
       output.select();
       navigator.clipboard.writeText(output.value);
-      alert('Copied null cell coordinates to clipboard!');
+      alert('Copied level JSON data to clipboard!');
     }
 
     // Initialize on load
