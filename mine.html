@@ -47,6 +47,7 @@
     <input type="file" id="localFolderInput" webkitdirectory directory multiple style="display: none;" onchange="handleLocalFolder(event)">
     <canvas id="game" width="1000" height="1000"></canvas>
   </body>
+
   <script>
     // Global
     const blue = "#5BA7F4"
@@ -241,6 +242,11 @@
     function clamp(val, min, max) {
         return Math.max(min, Math.min(max, val));
     }
+    
+    function lerp(start, end, factor) {
+        return start + (end - start) * factor;
+    }
+
 
     function getAngle(entity1, entity2) {
         return Math.atan2(entity2.y - entity1.y, entity2.x - entity1.x);
@@ -385,10 +391,19 @@
     }
 
     const img = {
+      backarrows: new Image(),
+      StartButton: new Image(),
+      StartButtonPressed: new Image(),
+      grabber: new Image(),
+      grabber_focussed: new Image(),
       ButtonA: new Image(),
       ButtonB: new Image(),
       ButtonC: new Image(),
       ButtonD: new Image(),
+      ButtonBeginner: new Image(),
+      ButtonNovice: new Image(),
+      ButtonVeteran: new Image(),
+      ButtonExpert: new Image(),
 
       Faces1: new Image(),
       Faces2: new Image(),
@@ -445,45 +460,136 @@
 
     function getGridAssetList() {
       let paths = [];
-      const episodes = [1,2]; // add episode 3 later
-      const diffs = ['beginner', 'novice', 'veteran', 'expert'];
+      const episodes = [1, 2, 3]; // episode 3 let's gooo
+      const diffs = [0, 1, 2, 3];
       
       for (let ep of episodes) {
-        for (let i = 1; i <= 8 + ep; i++) {
+        let maxStages = (ep === 3) ? 11 : (ep === 2 ? 10 : 9);
+        for (let i = 1; i <= maxStages; i++) {
           for (let diff of diffs) {
-            paths.push(`grids/ep${ep}/${i}${diff}.json`)
-            if ((i === 10 || i === 11) && diff !== 'beginner') paths.push(`grids/ep${ep}/${i}${diff}2.json`);
+            paths.push(`bitmap/${ep}_${i}_${diff}.png`);
+            if (i === 8 + ep && ep > 1 && diff > 0) {
+              paths.push(`bitmap/${ep}_${i}_${diff}_2.png`);
+            }
           }
         }
       }
-      paths.push('grids/test.json')
+      paths.push('grids/test.json'); // just in case...
       return paths;
     }
     const gridPaths = getGridAssetList();
+
+    async function parseBitmapToGridData(episode, stage, diff, phase2) {
+      const fileName = `${episode}_${stage}_${diff}${phase2 ? '_2' : ''}.png`;
+      const imgPath = `bitmap/${fileName}`;
+
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = imgPath;
+        
+        img.onload = () => {
+          const cols = img.width;
+          const rows = img.height;
+          const canvas = document.createElement('canvas');
+          canvas.width = cols;
+          canvas.height = rows;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+
+          const imgData = ctx.getImageData(0, 0, cols, rows).data;
+          
+          let gridData = {
+              rows: rows,
+              cols: cols,
+              mines: advGrids?.mines?.[episode - 1]?.[stage - 1]?.[diff] ?? 40,
+              timer: advGrids?.timer?.[episode - 1]?.[stage - 1]?.[diff] ?? 99,
+              cutout: [],
+              borders: []
+          };
+
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const idx = (r * cols + c) * 4;
+              const green = imgData[idx + 1];
+              const blue = imgData[idx + 2]; 
+
+              if (blue !== 0) {
+                  gridData.cutout.push({ row: r, col: c });
+                  continue;
+              }
+
+              const g = green / 255.0;
+              let bitmask = 0;
+              let top = false, right = false, bottom = false, left = false;
+
+              if (g > 0.03 && g <= 0.09) top = true;
+              else if (g > 0.09 && g <= 0.15) right = true;
+              else if (g > 0.15 && g <= 0.21) bottom = true;
+              else if (g > 0.21 && g <= 0.27) left = true;
+              else if (g > 0.27 && g <= 0.33) { top = true; right = true; }
+              else if (g > 0.33 && g <= 0.39) { top = true; bottom = true; }
+              else if (g > 0.39 && g <= 0.45) { top = true; left = true; }
+              else if (g > 0.45 && g <= 0.51) { right = true; bottom = true; }
+              else if (g > 0.51 && g <= 0.57) { right = true; left = true; }
+              else if (g > 0.57 && g <= 0.63) { bottom = true; left = true; }
+              else if (g > 0.63 && g <= 0.69) { top = true; right = true; bottom = true; }
+              else if (g > 0.69 && g <= 0.75) { top = true; right = true; left = true; }
+              else if (g > 0.75 && g <= 0.81) { top = true; bottom = true; left = true; }
+              else if (g > 0.81 && g <= 0.87) { right = true; bottom = true; left = true; }
+              else if (g > 0.87 && g <= 1.0)  { top = true; right = true; bottom = true; left = true; }
+
+              if (top) bitmask |= 8;
+              if (right) bitmask |= 4;
+              if (bottom) bitmask |= 2;
+              if (left) bitmask |= 1;
+
+              if (bitmask > 0) {
+                gridData.borders.push({ row: r, col: c, val: bitmask });
+              }
+            }
+          }
+          resolve(gridData);
+        };
+        img.onerror = (err) => reject(err);
+      });
+    }
 
     let totalAssets = Object.keys(img).length + Object.keys(aud).length + Object.keys(mus).length + gridPaths.length;
     let loadedAssets = 0;
     let hasErrors = false;
     let gridErrors = false;
     let localGridFiles = {};
+    let advGrids = {};
 
     async function preloadGrids() {
+      try {
+        const response = await fetch('grids.json');
+        if (response.ok) {
+          advGrids = await response.json();
+          logToConsole(`Loaded central grids.json`);
+        }
+      } catch (err) {
+        logToConsole(`[ERROR] Failed to load central grids.json`, true);
+      }
+
       for (let path of gridPaths) {
+        if (!path.endsWith('.png')) {
+          updateProgress(); 
+          continue;
+        };
         try {
-          const response = await fetch(path);
-          if (response.ok) {
-            const data = await response.json();
-            loadedGrids[path] = data;
-            logToConsole(`Loaded grid: ${path}`);
-          } else {
-            logToConsole(`[WARNING] Grid not found: ${path}`, true);
-            gridErrors = true; 
-            hasErrors = true;
-          }
+          const parts = path.replace('bitmap/', '').replace('.png', '').split('_');
+          const ep = parseInt(parts[0]);
+          const stage = parseInt(parts[1]);
+          const diffIndex = parseInt(parts[2]);
+          const isPhase2 = parts[3] === '2';
+
+          const gridData = await parseBitmapToGridData(ep, stage, diffIndex, isPhase2);
+          loadedGrids[path] = gridData;
+          logToConsole(`Loaded & parsed bitmap grid: ${path}`);
         } catch (err) {
-          logToConsole(`[ERROR] Failed to load grid: ${path}`, true);
-          hasErrors = true;
-          gridErrors = true;
+          logToConsole(`[NOTICE] No bitmap for ${path}, using grids.json fallback.`);
         }
         updateProgress();
       }
@@ -557,28 +663,38 @@
       }
     }
 
+
+
+    let lastDt = performance.now();
     let state = {};
     let settings = {
       undermine: false,
       chording: true,
       firstClick: 3, // 3, 1, or 0
-
     }
     let permState = {
+      cam: {
+        x: 0,
+        y: 0,
+      },
       mouse: {
         x: 0,
         y: 0,
         r: 1, // collision purposes
       },
+      lastFrame: performance.now(),
       menu: "main",
       mode: "debug",
       master: false,
+      episode: 1,
+      diff: 0,
       stage: 1,
       lives: 3,
       shields: 0,
       coins: 1050,
       continues: 0,
       clock: 0,
+      fps: 60,
     };
     let loopId;
     let started = false;
@@ -595,11 +711,67 @@
         y: 128,
         w: 448,
         h: 512
+      },
+      Beginner: {
+        x: canvas.width + 200,
+        y: 150,
+        w: 400,
+        h: 100
+      },
+      Novice: {
+        x: canvas.width + 200,
+        y: 250,
+        w: 400,
+        h: 100
+      },
+      Veteran: {
+        x: canvas.width + 200,
+        y: 350,
+        w: 400,
+        h: 100
+      },
+      Expert: {
+        x: canvas.width + 200,
+        y: 450,
+        w: 400,
+        h: 100
+      },
+      advStart: {
+        img: "StartButton",
+        x: canvas.width + 700,
+        y: 575,
+        w: 300,
+        h: 150
+      },
+      prevEp: {
+        img: "grabber",
+        x: canvas.width + 220,
+        y: 57,
+        w: 36,
+        h: 36
+      },
+      nextEp: { // ctx.drawImage(img.grabber, canvas.width + 220, 57, 36, 36)
+        img: "grabber",
+        x: canvas.width + 544,
+        y: 57,
+        w: 36,
+        h: 36
+      },
+    }
+
+    const menus = {
+      main: {
+        x: 0,
+        y: 0
+      },
+      adv: {
+        x: canvas.width,
+        y: 0,
       }
     }
     
     const flagRow = [1,2,3,-1,-2,-3,9]
-    const difficulty = ["beginner","novice","veteran","expert"];
+    const difficulty = ["Beginner","Novice","Veteran","Expert"];
 
     const outlineColor = [
       0,
@@ -835,9 +1007,13 @@
       const scaleY = canvas.height / rect.height;
       permState.mouse.x = (e.clientX - rect.left) * scaleX;
       permState.mouse.y = (e.clientY - rect.top) * scaleY;
-      if (permState.menu !== "game") return;
+      if (permState.menu !== "game") {
+        permState.mouse.x += permState.cam.x;
+        permState.mouse.y += permState.cam.y;
+        return;
+      };
       state.mouse.zoomX = (state.mouse.x - canvas.width / 2) / state.cam.zoom + canvas.width / 2 - state.cam.x;
-      state.mouse.zoomY = (state.mouse.y - canvas.height / 2) / state.cam.zoom + canvas.height / 2 - state.cam.y;
+      state.mouse.zoomY = (state.mouse.y - canvas.height / 2) / state.cam.zoom + canvas.height / 2- state.cam.y;
       
       const c = Math.floor(state.mouse.zoomX / state.cellSize);
       const r = Math.floor((state.mouse.zoomY - 100) / state.cellSize);
@@ -873,9 +1049,20 @@
       if (!started) {
         start();
         return;
-      } else if (permState.menu === "main") {
-        if (checkCircleRectCollision(permState.mouse, buttons.A)) init();
-        else if (checkCircleRectCollision(permState.mouse, buttons.B)) startAdventure();
+      } else if (permState.menu !== "game") {
+        for (let i in buttons) {
+          if (!checkCircleRectCollision(permState.mouse, buttons[i])) continue;
+          if (i === "A") console.warn("This button lacks code!")
+          if (i === "B") permState.menu = "adv";
+
+          if (i === "Beginner") permState.diff = 0;
+          else if (i === "Novice") permState.diff = 1;
+          else if (i === "Veteran") permState.diff = 2;
+          else if (i === "Expert") permState.diff = 3;
+          if (i === "advStart") startAdventure();
+          if (i === "prevEp") {permState.episode--; if (permState.episode < 1) permState.episode = 3;}
+          if (i === "nextEp") {permState.episode++; if (permState.episode > 3) permState.episode = 1;}
+        }
         return;
       }
 
@@ -1128,7 +1315,7 @@
         if (!state.grid[i]) continue;
         for (let j = c - 1; j <= c + 1; j++) {
           const neighbor = state.grid[i][j];
-          if (!neighbor || neighbor === cell || (settings.undermine && neighbor.hit)) continue;
+          if (!neighbor || neighbor === cell || (settings.undermine && neighbor.hit) || (!canSee(cell, neighbor) && flags && !anti)) continue;
           if (anti) {
             if (neighbor.mine && !flags) count += Math.abs(neighbor.mine);
             else if (neighbor.flagged && flags) count += Math.abs(neighbor.flagged);
@@ -1271,7 +1458,8 @@
     
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (permState.menu === "main") {
+      ctx.save();
+      if (permState.menu !== "game") {
         const bgMinR = 0;
         const bgMaxR = 16;
         const bgMinC = 0;
@@ -1288,11 +1476,19 @@
             ctx.drawImage(img.water, offsetX * tileSize - 1, offsetY * tileSize, tileSize, tileSize, x, y, 48, 48);
           }
         }
-        ctx.drawImage(img.ButtonA, buttons.A.x, buttons.A.y, buttons.A.w, buttons.A.h)
-        ctx.drawImage(img.ButtonB, buttons.B.x, buttons.B.y, buttons.B.w, buttons.B.h)
+        ctx.translate(-permState.cam.x, permState.cam.y)
+        ctx.drawImage(img.Panel, canvas.width + 200, 50, 400, 50)
+        text("EPISODE " + permState.episode, canvas.width + 400, 77, "#FFF", 32, "sans-serif", "center", "middle")
+        for (let i in buttons) {
+          ctx.drawImage(buttons[i].img ? img[buttons[i].img] : img["Button" + i], buttons[i].x, buttons[i].y, buttons[i].w, buttons[i].h)
+          if (difficulty.includes(i) && permState.diff !== difficulty.indexOf(i)) rect(buttons[i].x, buttons[i].y, buttons[i].w, buttons[i].h, "rgb(0,0,0,0.5)") 
+        }
+        text("START", buttons.advStart.x + buttons.advStart.w / 2, buttons.advStart.y + buttons.advStart.h / 2 - 20, red, 32, "sans-serif", "center", "middle", "#FFF", 4)
+        text("ADVENTURE", buttons.advStart.x + buttons.advStart.w / 2, buttons.advStart.y + buttons.advStart.h / 2 + 20, red, 32, "sans-serif", "center", "middle", "#FFF", 4)
+         // c, size, family, align, baseline, sc, sw = 3, weight
+        ctx.restore();
         return;
       }
-      ctx.save();
       if (state.shake > 0) {
         const force = 3;
         const offsetX = state.shakeDir ? force : -force;
@@ -1639,12 +1835,20 @@
         ctx.translate(0, -100)
       }
       ctx.restore();
+      text(`FPS: ${permState.fps}`, 20, 30, "#0f0", 14, "monospace", "left", "middle");
     }
 
     function loop() {
-      permState.clock++;
-      if (state?.sonar) state.sonarClock++;
-      if (permState.menu === "main") {
+      if (!state) console.warn("Uh.. where is state???");
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - lastDt) / 1000);
+      lastDt = now;
+      permState.fps = Math.round(1 / dt);
+      permState.clock += dt * 60;
+      if (state.sonar) state.sonarClock++;
+      if (permState.menu !== "game") {
+        permState.cam.x = lerp(permState.cam.x, menus[permState.menu].x, 0.1);
+        permState.cam.y = lerp(permState.cam.y, menus[permState.menu].y, 0.1);
         draw();
         loopId = requestAnimationFrame(loop);
         return;
@@ -1662,7 +1866,7 @@
       }
       if (state.nine.active && state.nine.revealed) {
         const nineCell = state.grid[state.nine.row][state.nine.col];
-        if (state.clicked || state.suprise) state.nine.timerCD--
+        if (state.clicked || state.suprise) state.nine.timerCD -= dt * 60
         if (state.clicked) {
           if (state.nine.destination && state.nine.cell(state.nine.destination)) state.nine.thinkCD--;
           state.nine.moveCD--;
@@ -1693,7 +1897,7 @@
                 if (!validDest) break;
               }
               if (validDest) {state.nine.destination = targetCell; state.nine.destDist = Math.abs(targetCell.row - nineCell.row) + Math.abs(targetCell.col - nineCell.col);}
-              state.nine.thinkCD = state.nine.destDist * (0.4 - (permState.diff / 10)) * 60;
+              state.nine.thinkCD = state.nine.destDist ? 30 : state.nine.destDist * (0.4 - (permState.diff / 10)) * 60;
             }
           }
         } else if (state.nine.moveCD <= 0) {
@@ -1717,7 +1921,7 @@
           const boss = state.ten.tens[i];
           if (state.clicked && !boss.activated) boss.activated = true
           const timerSpeed = 1 / Math.max(0.1, 1.0 - (state.fails * 0.05));
-          if (boss.activated && !state.over && !boss.debug) boss.time -= timerSpeed / 60;
+          if (boss.activated && !state.over && !boss.debug) boss.time -= timerSpeed * dt;
           if (boss.time < 4 && boss.time > 0 && boss.beepcd <= 0) {play("tenBeep"); boss.beepcd = Math.max(Math.floor(boss.time) * 10, 4)};
           boss.beepcd--;
           if (boss.time <= 0 && !state.lost) gameOver();
@@ -1766,9 +1970,32 @@
       for (let i in mus) {
         mus[i].pause();
         mus[i].currentTime = 0; 
+        mus[i].playbackRate = 1.0;
       } 
 
-      const grid = test ? loadedGrids[`grids/test.json`] : loadedGrids[`grids/ep${permState.episode}/${permState.stage}${difficulty[permState.diff]}.json`]; // add variants (10 phase 2) later
+      const gridKey = `bitmap/${permState.episode}_${permState.stage}_${permState.diff}.png`;
+      let grid = test ? loadedGrids[`grids/test.json`] : loadedGrids[gridKey];
+
+      if (!grid) {
+        const epIdx = permState.episode - 1;
+        const stageIdx = permState.stage - 1;
+        const diffIdx = permState.diff;
+
+        const fallbackRows = advGrids?.rows?.[epIdx]?.[stageIdx]?.[diffIdx] ?? 16;
+        const fallbackCols = advGrids?.cols?.[epIdx]?.[stageIdx]?.[diffIdx] ?? 16;
+        const fallbackMines = advGrids?.mines?.[epIdx]?.[stageIdx]?.[diffIdx] ?? 40;
+        const fallbackTimer = advGrids?.timer?.[epIdx]?.[stageIdx]?.[diffIdx] ?? 99;
+
+        grid = {
+          rows: fallbackRows,
+          cols: fallbackCols,
+          mines: fallbackMines,
+          timer: fallbackTimer,
+          cutout: [],
+          borders: []
+        };
+        logToConsole(`[Fallback] Built standard grid for Ep ${permState.episode}, Stage ${permState.stage}`);
+      }
 
       state = { 
         get mouse() {return permState.mouse},
@@ -1979,9 +2206,7 @@
 
     function startAdventure(ep) {
       permState.mode = "adv";
-      permState.episode = 2;
       permState.stage = 1;
-      permState.diff = 1;
       init();
     }
         
@@ -1993,11 +2218,13 @@
         permState.continues++;
       } else {
         permState.stage++;
-        if (permState.stage % 2 !== 0 && permState.stage <= 8) permState.shields++;
+        if (permState.episode > 1 && permState.stage % 2 !== 0 && permState.stage <= 8) permState.shields++;
       }
       if (state.coins < 0 || permState.stage > 8 + permState.episode) start()
       else init();
     }
     text("Click here to start!", canvas.width / 2, canvas.height / 2, "#FFF", 72, "sans-serif", "center", "middle")
-  </script>
+  </script><script src="https://cdnjs.cloudflare.com/ajax/libs/eruda/3.4.3/eruda.min.js"></script>
+<script>eruda.init();</script>
+
 </html>

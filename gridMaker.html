@@ -419,26 +419,63 @@
 
           const imgData = offContext.getImageData(0, 0, cols, rows).data;
           const cutoutArray = [];
+          borderMap.clear();
 
           for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
               const index = (r * cols + c) * 4;
-              const blueChannel = imgData[index + 2];
+              const redChannel = imgData[index];     // Red (mine types / data if needed)
+              const greenChannel = imgData[index + 1]; // Green (borders / edges)
+              const blueChannel = imgData[index + 2];  // Blue (cutouts/disabled tiles)
+
+              // 1. Handle Cutouts (Blue channel)
               if (blueChannel !== 0) {
                 cutoutArray.push({ row: r, col: c });
+                continue; // Skip border checks for cutout tiles
+              }
+
+              // 2. Handle Borders (Green channel, normalized 0.0 - 1.0)
+              const g = greenChannel / 255.0;
+              let top = false, right = false, bottom = false, left = false;
+
+              if (g > 0.03 && g <= 0.09) { top = true; }
+              else if (g > 0.09 && g <= 0.15) { right = true; }
+              else if (g > 0.15 && g <= 0.21) { bottom = true; }
+              else if (g > 0.21 && g <= 0.27) { left = true; }
+              else if (g > 0.27 && g <= 0.33) { top = true; right = true; }
+              else if (g > 0.33 && g <= 0.39) { top = true; bottom = true; }
+              else if (g > 0.39 && g <= 0.45) { top = true; left = true; }
+              else if (g > 0.45 && g <= 0.51) { right = true; bottom = true; }
+              else if (g > 0.51 && g <= 0.57) { right = true; left = true; }
+              else if (g > 0.57 && g <= 0.63) { bottom = true; left = true; }
+              else if (g > 0.63 && g <= 0.69) { top = true; right = true; bottom = true; }
+              else if (g > 0.69 && g <= 0.75) { top = true; right = true; left = true; }
+              else if (g > 0.75 && g <= 0.81) { top = true; bottom = true; left = true; }
+              else if (g > 0.81 && g <= 0.87) { right = true; bottom = true; left = true; }
+              else if (g > 0.87 && g <= 1.0)  { top = true; right = true; bottom = true; left = true; }
+
+              // Calculate bitmask value (Top=8, Right=4, Bottom=2, Left=1)
+              let bitmask = 0;
+              if (top) bitmask |= 8;
+              if (right) bitmask |= 4;
+              if (bottom) bitmask |= 2;
+              if (left) bitmask |= 1;
+
+              if (bitmask > 0) {
+                borderMap.set(`${r},${c}`, bitmask);
               }
             }
           }
 
-          generateGrid({ rows, cols, cutout: cutoutArray, borders: [] });
-          alert(`Parsed PNG "${file.name}" (${cols}x${rows}) with ${cutoutArray.length} cutout tiles!`);
+          generateGrid({ rows, cols, cutout: cutoutArray, borders: getBordersArray() });
+          alert(`Successfully imported PNG "${file.name}" (${cols}x${rows}) with cutouts and borders!`);
         };
         img.src = event.target.result;
       };
       reader.readAsDataURL(file);
       e.target.value = '';
     }
-
+    
     function copyOutput() {
       const output = document.getElementById('output');
       output.select();
