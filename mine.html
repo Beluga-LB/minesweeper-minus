@@ -436,6 +436,10 @@
       NumbersNegative: new Image(),
       nine: new Image(),
       nineSpikes: new Image(),
+      eleven: new Image(),
+      elevenNode: new Image(),
+      elevenLaser: new Image(),
+      elevenTreads: new Image(),
       Numbers10: new Image(),
       water: new Image(),
       white_outline: new Image(),
@@ -999,6 +1003,49 @@
         state.bgm = "ten";
       }
     }
+
+    class bossEleven {
+      constructor() {
+        this.active = permState.stage === 11;
+        this.revealed = false;
+        this.handicap = -11;
+        this.row = null;
+        this.col = null;
+        this.penalty = 0;
+        this.lastPenalty = 1;
+        this.moveCD = 0;
+        this.alpha = 0;
+      }
+
+      cell(cell) {
+        return state.eleven.active && this.row === cell.row && this.col === cell.col; 
+      };
+
+      flag() {
+        state.grid[i][j].flagged = true;
+      }
+
+      move() {
+        let opened = [];
+        for (let i = 0; i < state.rows; i++) {
+          if (!state.grid[i]) continue;
+          for (let j = 0; j < state.cols; j++) {
+            if (state.grid[i][j] && !state.grid[i][j].opened) opened.push(state.grid[i][j]);
+          }
+        }
+        if (opened.length === 0) {gameOver(); return;}
+
+        let found = false;
+        while (!found) {
+          const target = randomChoice(opened);
+          if (!target) continue; // how????
+          if (!target.opened && !target.flagged) found = target;
+        }
+        this.row = found.row;
+        this.col = found.col;
+      }
+    }
+
     
     window.addEventListener('mousemove', (e) => {
       if (!started) return;
@@ -1347,22 +1394,22 @@
       if (rDiff === -1 && cDiff === -1) {
         const leftBlocked = cell.borders?.left && state.grid[r1 - 1]?.[c1]?.borders?.left;
         const topBlocked = cell.borders?.top && state.grid[r1]?.[c1 - 1]?.borders?.top;
-        if (leftBlocked || topBlocked) return false;
+        if (leftBlocked || topBlocked || (cell.borders?.top && cell.borders?.left) || (neighbor.borders?.bottom && neighbor.borders?.right)) return false;
       }
       if (rDiff === -1 && cDiff === 1) {
         const rightBlocked = cell.borders?.right && state.grid[r1 - 1]?.[c1]?.borders?.right;
         const topBlocked = cell.borders?.top && state.grid[r1]?.[c1 + 1]?.borders?.top;
-        if (rightBlocked || topBlocked) return false;
+        if (rightBlocked || topBlocked || (cell.borders?.top && cell.borders?.right) || (neighbor.borders?.bottom && neighbor.borders?.left)) return false;
       }
       if (rDiff === 1 && cDiff === -1) {
         const leftBlocked = cell.borders?.left && state.grid[r1 + 1]?.[c1]?.borders?.left;
         const bottomBlocked = cell.borders?.bottom && state.grid[r1]?.[c1 - 1]?.borders?.bottom;
-        if (leftBlocked || bottomBlocked) return false;
+        if (leftBlocked || bottomBlocked || (cell.borders?.bottom && cell.borders?.left) || (neighbor.borders?.top && neighbor.borders?.right)) return false;
       }
       if (rDiff === 1 && cDiff === 1) {
         const rightBlocked = cell.borders?.right && state.grid[r1 + 1]?.[c1]?.borders?.right;
         const bottomBlocked = cell.borders?.bottom && state.grid[r1]?.[c1 + 1]?.borders?.bottom;
-        if (rightBlocked || bottomBlocked) return false;
+        if (rightBlocked || bottomBlocked || (cell.borders?.bottom && cell.borders?.right) || (neighbor.borders?.top && neighbor.borders?.left)) return false;
       }
 
       const revRDiff = -rDiff;
@@ -1667,8 +1714,6 @@
       }
       if (state.nine.revealed && !state.won) {
         const nineCell = state.grid[state.nine.row][state.nine.col];
-        const target = state.grid[state.nine.row][state.nine.col + 2];
-        const moving = state.grid[state.nine.row][state.nine.col - 1];
 
         ctx.save();
           const size = state.cellSize * 3
@@ -1677,10 +1722,16 @@
           if (img.nineSpikes) ctx.drawImage(img.nineSpikes, -size / 2, -size / 2, size, size); 
         ctx.restore();
         if (img.nine) ctx.drawImage(
-                        img.nine,
-                        0, 0, 384, 384,
-                        state.nine.x - state.cellSize, state.nine.y - state.cellSize, state.cellSize * 3, state.cellSize * 3
-                      )
+          img.nine,
+          0, 0, 384, 384,
+          state.nine.x - state.cellSize, state.nine.y - state.cellSize, state.cellSize * 3, state.cellSize * 3
+        )
+      }
+      if (state.eleven.revealed) {
+        const elevenCell = state.grid[state.eleven.row][state.eleven.col];
+        ctx.save();
+        ctx.drawImage(img.eleven, elevenCell.col * state.cellSize - 10, elevenCell.row * state.cellSize - 10, state.cellSize + 20, state.cellSize + 20)
+        ctx.restore();
       }
       ctx.translate(0,-100);
       ctx.restore();
@@ -2080,41 +2131,12 @@
         suprise: false,
         nine: new bossNine(permState.stage === 9 ? true : false, grid.timer),
         ten: {
-          active: permState.stage === 10 ? true : false,
+          active: permState.stage === 10,
           amount: 1,
           revealed: 0,
           tens: [],
         },
-        eleven: {
-          active: false,
-          revealed: false,
-          handicap: -11,
-          row: null,
-          col: null,
-          penalty: 0,
-          lastPenalty: 1, 
-          move: function() {
-            let opened = 0;
-            for (let i = 0; i < state.rows; i++) {
-              if (!state.grid[i]) continue;
-              for (let j = 0; j < state.cols; j++) {
-                if (!state.grid[i][j]) continue;
-                if (!state.grid[i][j].opened) opened++;
-              }
-            }
-            if (opened === 0) {gameOver(); return;}
-            
-            let found = false;
-            while (!found) {
-              const r = Math.floor(Math.random() * state.rows);
-              const c = Math.floor(Math.random() * state.cols);
-              if (!state.grid[r]?.[c]) return;
-              const target = state.grid[r][c];
-              if (!target.opened && !target.flagged) found = target;
-            }
-            found.flag();
-          },
-        },
+        eleven: new bossEleven(),
       }
 
       for (let r = 0; r < state.rows; r++) {
@@ -2157,16 +2179,15 @@
         });
       }
 
-      if (permState.episode === 2 && permState.stage <= 8) state.bgm = bgmAlt[state.bgm];
+      if ((permState.episode === 2 && permState.stage <= 8) || (permState.episode === 3 && permState.stage % 2 === 0)) state.bgm = bgmAlt[state.bgm];
       console.log(state.bgm)
 
       for (let i=0; i<state.ten.amount; i++) {
         state.ten.tens[i] = new bossTen();
       }
       if (!state.suprise && state.boss) {
-        if (state.eleven.active) state.bgm = "one";
+        if (state.eleven.active || state.nine.active) state.bgm = "one";
         else if (state.ten.active) state.bgm = "five";
-        else if (state.nine.active) state.bgm = "one";
       } else if (state.suprise && state.boss) {
         if (state.eleven.active) state.bgm = "eleven";
         else if (state.ten.active) state.bgm = "ten";

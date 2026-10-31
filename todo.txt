@@ -1,14 +1,8 @@
-Add Episode 2
-Add Nine's timers to each Episode 2 grid data file
 Ensure that 10 (and maybe even multiple) works
-Nine's timer should be red
-Adventure options menu
+Nine's timer should be red (same with Eleven's flags)
 Settings
 Free play
-Make nine's destination impossible to be close to a cutout tile before reaching state.nine.move()
-Add Captain Sweeper, sonar, and health graphics
-Overhaul the UI
+Minigames (big one, long haul, maybe extras?)
+Customization
 Score/Ranking system
-Boss reveal animations??
-Episode 3?????
-Anti-spread walls!?!??!?!??!?!??!??!?
+Boss reveal animations
