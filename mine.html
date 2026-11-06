@@ -463,7 +463,7 @@
     let loadedGrids = {};
 
     function getGridAssetList() {
-      let paths = [];
+      let paths = [`bitmap/bombbay.png`];
       const episodes = [1, 2, 3]; // episode 3 let's gooo
       const diffs = [0, 1, 2, 3];
       
@@ -483,8 +483,8 @@
     }
     const gridPaths = getGridAssetList();
 
-    async function parseBitmapToGridData(episode, stage, diff, phase2) {
-      const fileName = `${episode}_${stage}_${diff}${phase2 ? '_2' : ''}.png`;
+    async function parseBitmapToGridData(episode, stage, diff, phase2, hell = false) {
+      const fileName = hell ? "bombbay.png" : `${episode}_${stage}_${diff}${phase2 ? '_2' : ''}.png`;
       const imgPath = `bitmap/${fileName}`;
 
       return new Promise((resolve, reject) => {
@@ -506,7 +506,7 @@
           let gridData = {
               rows: rows,
               cols: cols,
-              mines: advGrids?.mines?.[episode - 1]?.[stage - 1]?.[diff] ?? 40,
+              mines: hell ? 5000 : (advGrids?.mines?.[episode - 1]?.[stage - 1]?.[diff] ?? 40),
               timer: advGrids?.timer?.[episode - 1]?.[stage - 1]?.[diff] ?? 99,
               cutout: [],
               borders: []
@@ -589,7 +589,7 @@
           const diffIndex = parseInt(parts[2]);
           const isPhase2 = parts[3] === '2';
 
-          const gridData = await parseBitmapToGridData(ep, stage, diffIndex, isPhase2);
+          const gridData = await parseBitmapToGridData(ep, stage, diffIndex, isPhase2, path.includes("bombbay"));
           loadedGrids[path] = gridData;
           logToConsole(`Loaded & parsed bitmap grid: ${path}`);
         } catch (err) {
@@ -1006,7 +1006,7 @@
 
     class bossEleven {
       constructor() {
-        this.active = permState.stage === 11;
+        this.active = permState.stage === 11 && permState.mode === "adv";
         this.revealed = false;
         this.handicap = -11;
         this.row = null;
@@ -2017,25 +2017,78 @@
       loopId = requestAnimationFrame(loop);
     }
 
-    function init(test = false) {
+    /*
+    Each first stage is a 10x10 board, with the mine count as follows:
+    EASY: 8
+    NORMAL: 10
+    HARD: 12
+    EXTREME: 15
+
+    From the next stage, the horizontal and vertical lengths are determined randomly from (9 + m) to (12 + M) spaces. The values ​​of m and M increase as follows.
+    EASY: m increases by 1 every 8 stages, M increases by 1 every 4 stages
+    NORMAL: m increases by 1 every 6 stages, M increases by 1 every 3 stages
+    HARD: m increases by 1 every 4 stages, M increases by 1 every 2 stages
+    EXTREME: m increases by 1 every 2 stages, M increases by 1 every 1 stage
+    However, if it exceeds 32 spaces, it is adjusted to 32 spaces.
+
+    Mine density also increases little by little and converges to a constant value depending on the difficulty.
+    EASY: 20%
+    NORMAL: 25%
+    HARD: 30%
+    EXTREME: 35%
+    */
+
+    function init(test = false, mode = "adv") {
       for (let i in mus) {
         mus[i].pause();
         mus[i].currentTime = 0; 
         mus[i].playbackRate = 1.0;
       } 
 
-      const gridKey = `bitmap/${permState.episode}_${permState.stage}_${permState.diff}.png`;
-      let grid = test ? loadedGrids[`grids/test.json`] : loadedGrids[gridKey];
+      let gridKey = `bitmap/${permState.episode}_${permState.stage}_${permState.diff}.png`;
+      if (test) gridKey = "bitmap/bombbay.png";
+      else if (mode === "haul") gridKey = null;
+      let grid = loadedGrids[gridKey];
 
       if (!grid) {
         const epIdx = permState.episode - 1;
         const stageIdx = permState.stage - 1;
         const diffIdx = permState.diff;
 
-        const fallbackRows = advGrids?.rows?.[epIdx]?.[stageIdx]?.[diffIdx] ?? 16;
-        const fallbackCols = advGrids?.cols?.[epIdx]?.[stageIdx]?.[diffIdx] ?? 16;
-        const fallbackMines = advGrids?.mines?.[epIdx]?.[stageIdx]?.[diffIdx] ?? 40;
-        const fallbackTimer = advGrids?.timer?.[epIdx]?.[stageIdx]?.[diffIdx] ?? 99;
+        let fallbackRows = advGrids?.rows?.[epIdx]?.[stageIdx]?.[diffIdx] ?? 16;
+        let fallbackCols = advGrids?.cols?.[epIdx]?.[stageIdx]?.[diffIdx] ?? 16;
+        let fallbackMines = advGrids?.mines?.[epIdx]?.[stageIdx]?.[diffIdx] ?? 40;
+        let fallbackTimer = advGrids?.timer?.[epIdx]?.[stageIdx]?.[diffIdx] ?? 99;
+
+        if (mode === "haul") {
+          permState.mode = "haul";
+          let stage = permState.stage;
+          let diff = permState.diff; // 0: Easy, 1: Normal, 2: Hard, 3: Extreme
+
+          if (stage === 1) {
+            fallbackRows = 10;
+            fallbackCols = 10;
+            const startingMines = [8, 10, 12, 15];
+            fallbackMines = startingMines[diff];
+          } else {
+            // Calculate m and M increments based on diff
+            let mIncDivider = [8, 6, 4, 2][diff];
+            let MIncDivider = [4, 3, 2, 1][diff];
+            
+            let m = Math.floor((stage - 1) / mIncDivider);
+            let M = Math.floor((stage - 1) / MIncDivider);
+
+            let minLen = 9 + m;
+            let maxLen = 12 + M;
+
+            fallbackRows = Math.min(32, randomNumber(minLen, maxLen, true));
+            fallbackCols = Math.min(32, randomNumber(minLen, maxLen, true));
+
+            let densities = [0.20, 0.25, 0.30, 0.35];
+            fallbackMines = Math.floor((fallbackRows * fallbackCols) * densities[diff]);
+          }
+          fallbackTimer = 99; // Standard or infinite timer
+        }
 
         grid = {
           rows: fallbackRows,
@@ -2101,7 +2154,7 @@
 
         get stage() {return permState.stage},
         set stage(val) {permState.stage = val;},
-        bgm: bgmNumbers[permState.stage],
+        bgm: permState.mode === "adv" ? bgmNumbers[permState.stage] : bgmNumbers[Math.floor(1 + Math.random() * 8)],
         clicked: false,
         fails: 0,
         won: false,
@@ -2129,9 +2182,9 @@
           return this.nine.revealed || this.ten.revealed || this.eleven.revealed
         },
         suprise: false,
-        nine: new bossNine(permState.stage === 9 ? true : false, grid.timer),
+        nine: new bossNine(permState.stage === 9 && permState.mode === "adv", grid.timer),
         ten: {
-          active: permState.stage === 10,
+          active: permState.stage === 10 && permState.mode === "adv",
           amount: 1,
           revealed: 0,
           tens: [],
@@ -2179,7 +2232,7 @@
         });
       }
 
-      if ((permState.episode === 2 && permState.stage <= 8) || (permState.episode === 3 && permState.stage % 2 === 0)) state.bgm = bgmAlt[state.bgm];
+      if ((permState.mode !== "adv" && Math.random < 0.5) || (permState.mode === "adv" && (permState.episode === 2 && permState.stage <= 8) || (permState.episode === 3 && permState.stage % 2 === 0))) state.bgm = bgmAlt[state.bgm];
       console.log(state.bgm)
 
       for (let i=0; i<state.ten.amount; i++) {
@@ -2241,8 +2294,13 @@
         permState.stage++;
         if (permState.episode > 1 && permState.stage % 2 !== 0 && permState.stage <= 8) permState.shields++;
       }
-      if (state.coins < 0 || permState.stage > 8 + permState.episode) start()
-      else init();
+      
+      const isStageCapReached = permState.mode !== "haul" && permState.stage > 8 + permState.episode;
+      if (state.coins < 0 || isStageCapReached) {
+        start();
+      } else {
+        init(false, permState.mode === "haul" ? "haul" : undefined);
+      }
     }
     text("Click here to start!", canvas.width / 2, canvas.height / 2, "#FFF", 72, "sans-serif", "center", "middle")
   </script><script src="https://cdnjs.cloudflare.com/ajax/libs/eruda/3.4.3/eruda.min.js"></script>
